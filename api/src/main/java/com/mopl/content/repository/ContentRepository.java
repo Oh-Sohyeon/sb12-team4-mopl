@@ -14,4 +14,6 @@ public interface ContentRepository extends JpaRepository<Content, UUID> {
     Optional<Content> findByIdAndDeletedAtIsNull(UUID id);
 
     Page<Content> findAllByDeletedAtIsNull(Pageable pageable);
+
+    boolean existsByIdAndDeletedAtIsNull(UUID id);
 }
