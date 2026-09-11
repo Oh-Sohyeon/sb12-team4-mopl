@@ -15,7 +15,7 @@ public record PlaylistResponse(
 	String title,
 	String description,
 	LocalDateTime updatedAt,
-	long subscribeCount,
+	long subscriberCount,
 	boolean subscribedByMe,
 	List<Object> contents // TODO: 콘텐츠 연결 이슈에서 ContentSummary로 교체
 ) {
