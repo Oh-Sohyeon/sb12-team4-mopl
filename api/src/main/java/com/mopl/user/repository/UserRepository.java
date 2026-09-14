@@ -1,4 +1,4 @@
-package com.mopl.common.exception.user.repository;
+package com.mopl.user.repository;
 
 import com.mopl.core.domain.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
