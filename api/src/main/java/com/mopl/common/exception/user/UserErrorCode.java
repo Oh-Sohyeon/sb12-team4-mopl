@@ -9,14 +9,31 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum UserErrorCode implements ErrorCode {
 
-    // 예시
-    // CONTENT_NOT_FOUND(
-    //         HttpStatus.NOT_FOUND,
-    //         "USER_001",
-    //         "콘텐츠를 찾을 수 없습니다."
-    // );
-
-    ;
+    USER_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "USER_001",
+            "존재하지 않는 사용자입니다."
+    ),
+    USER_LOCKED(
+            HttpStatus.UNAUTHORIZED,
+            "USER_002",
+            "잠긴 계정입니다. 관리자에게 문의해주세요."
+    ),
+    USER_WITHDRAWN(
+            HttpStatus.UNAUTHORIZED,
+            "USER_003",
+            "탈퇴한 계정입니다."
+    ),
+    ACCESS_DENIED(
+            HttpStatus.FORBIDDEN,
+            "USER_004",
+            "본인의 정보만 수정할 수 있습니다."
+    ),
+    INVALID_SORT_FIELD(
+            HttpStatus.BAD_REQUEST,
+            "USER_005",
+            "지원하지 않는 정렬 기준입니다."
+    );
 
     private final HttpStatus status;
     private final String code;
