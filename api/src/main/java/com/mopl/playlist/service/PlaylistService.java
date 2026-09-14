@@ -36,6 +36,12 @@ public class PlaylistService {
 	private final PlaylistContentRepository playlistContentRepository;
 	private final ContentRepository contentRepository;
 
+	private List<Content> getContentsOf(UUID playlistId) {
+		return playlistContentRepository.findAllByPlaylistId(playlistId).stream()
+			.map(PlaylistContent::getContent)
+			.toList();
+	}
+
 	public PlaylistService(
 		PlaylistRepository playlistRepository,
 		EntityManager entityManager,
@@ -50,11 +56,7 @@ public class PlaylistService {
 
 	public PlaylistResponse getPlaylist(UUID playlistId) {
 		Playlist playlist = findPlaylistOrThrow(playlistId);
-		List<Content> contents = playlistContentRepository.findAllByPlaylistId(playlistId).stream()
-			.map(PlaylistContent::getContent)
-			.toList();
-
-		return PlaylistResponse.from(playlist, contents);
+		return PlaylistResponse.from(playlist, getContentsOf(playlistId));
 	}
 
 	public PlaylistListResponse getPlaylists(
@@ -125,7 +127,7 @@ public class PlaylistService {
 		playlist.update(request.title(), request.description());
 		entityManager.flush();
 
-		return PlaylistResponse.from(playlist);
+		return PlaylistResponse.from(playlist, getContentsOf(playlistId));
 	}
 
 	@Transactional

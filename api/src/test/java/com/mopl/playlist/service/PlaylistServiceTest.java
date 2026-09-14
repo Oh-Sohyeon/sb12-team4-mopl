@@ -306,11 +306,35 @@ class PlaylistServiceTest {
 		void success() {
 			PlaylistUpdateRequest request = new PlaylistUpdateRequest("새 제목", "새 설명");
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
 
 			playlistService.updatePlaylist(ownerId, playlistId, request);
 
 			verify(playlist).update("새 제목", "새 설명");
 			verify(entityManager).flush();
+		}
+
+		@Test
+		@DisplayName("수정 응답에도 기존 연결된 콘텐츠가 포함된다")
+		void success_includesExistingContents() {
+			Content content = mock(Content.class);
+			when(content.getId()).thenReturn(UUID.randomUUID());
+			when(content.getTitle()).thenReturn("연결된 콘텐츠");
+			when(content.getThumbnailUrl()).thenReturn("http://thumb.url");
+			when(content.getDeletedAt()).thenReturn(null);
+
+			PlaylistContent playlistContent = mock(PlaylistContent.class);
+			when(playlistContent.getContent()).thenReturn(content);
+
+			PlaylistUpdateRequest request = new PlaylistUpdateRequest("새 제목", null);
+			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(playlistContentRepository.findAllByPlaylistId(playlistId))
+				.thenReturn(List.of(playlistContent));
+
+			PlaylistResponse response = playlistService.updatePlaylist(ownerId, playlistId, request);
+
+			assertThat(response.contents()).hasSize(1);
+			assertThat(response.contents().get(0).title()).isEqualTo("연결된 콘텐츠");
 		}
 
 		@Test
