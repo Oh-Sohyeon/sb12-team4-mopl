@@ -21,6 +21,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+
 import static org.mockito.ArgumentMatchers.eq;
 import com.mopl.common.exception.content.ContentNotFoundException;
 import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
@@ -88,6 +90,7 @@ class PlaylistServiceTest {
 		@DisplayName("존재하는 플레이리스트를 조회하면 응답으로 변환한다")
 		void success() {
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
 
 			PlaylistResponse response = playlistService.getPlaylist(playlistId);
 
@@ -98,6 +101,30 @@ class PlaylistServiceTest {
 			assertThat(response.subscriberCount()).isZero();
 			assertThat(response.subscribedByMe()).isFalse();
 			assertThat(response.contents()).isEmpty();
+		}
+
+		@Test
+		@DisplayName("연결된 콘텐츠가 있으면 응답의 contents에 포함한다")
+		void success_withContents() {
+			Content content = mock(Content.class);
+			UUID contentId = UUID.randomUUID();
+			when(content.getId()).thenReturn(contentId);
+			when(content.getTitle()).thenReturn("콘텐츠 제목");
+			when(content.getThumbnailUrl()).thenReturn("http://thumb.url");
+			when(content.getDeletedAt()).thenReturn(null);
+
+			PlaylistContent playlistContent = mock(PlaylistContent.class);
+			when(playlistContent.getContent()).thenReturn(content);
+
+			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(playlistContentRepository.findAllByPlaylistId(playlistId))
+				.thenReturn(List.of(playlistContent));
+
+			PlaylistResponse response = playlistService.getPlaylist(playlistId);
+
+			assertThat(response.contents()).hasSize(1);
+			assertThat(response.contents().get(0).id()).isEqualTo(contentId);
+			assertThat(response.contents().get(0).title()).isEqualTo("콘텐츠 제목");
 		}
 
 		@Test
@@ -155,6 +182,7 @@ class PlaylistServiceTest {
 			when(playlistRepository.findAllByCursor(any(), any(), anyInt(), any(), any()))
 				.thenReturn(playlists);
 			when(playlistRepository.count()).thenReturn(10L);
+			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
 
 			PlaylistListResponse response = playlistService.getPlaylists(
 				null, null, 2, "updatedAt", "DESCENDING"
@@ -173,6 +201,7 @@ class PlaylistServiceTest {
 			when(playlistRepository.findAllByCursor(any(), any(), anyInt(), any(), any()))
 				.thenReturn(playlists);
 			when(playlistRepository.count()).thenReturn(1L);
+			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
 
 			PlaylistListResponse response = playlistService.getPlaylists(
 				null, null, 20, "updatedAt", "DESCENDING"
@@ -189,6 +218,7 @@ class PlaylistServiceTest {
 			when(playlistRepository.findAllByCursor(any(), any(), eq(101), any(), any()))
 				.thenReturn(List.of());
 			when(playlistRepository.count()).thenReturn(0L);
+			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
 
 			playlistService.getPlaylists(null, null, 200, "updatedAt", "DESCENDING");
 
@@ -381,7 +411,7 @@ class PlaylistServiceTest {
 			assertThatThrownBy(() -> playlistService.addContentToPlaylist(ownerId, playlistId, contentId))
 				.isInstanceOf(PlaylistContentAlreadyExistsException.class);
 
-			verify(playlistContentRepository, never()).save(any());
+			verify(playlistContentRepository, never()).saveAndFlush(any());
 		}
 
 		@Test
@@ -395,7 +425,22 @@ class PlaylistServiceTest {
 
 			playlistService.addContentToPlaylist(ownerId, playlistId, contentId);
 
-			verify(playlistContentRepository).save(any(PlaylistContent.class));
+			verify(playlistContentRepository).saveAndFlush(any(PlaylistContent.class));
+		}
+
+		@Test
+		@DisplayName("동시 요청으로 저장 시점에 UNIQUE 제약 위반이 나면 이미 추가된 콘텐츠 예외로 변환한다")
+		void concurrentInsert_convertsToAlreadyExistsException() {
+			UUID contentId = UUID.randomUUID();
+			Content content = mock(Content.class);
+			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(contentRepository.findByIdAndDeletedAtIsNull(contentId)).thenReturn(Optional.of(content));
+			when(playlistContentRepository.existsByPlaylistIdAndContentId(playlistId, contentId)).thenReturn(false);
+			when(playlistContentRepository.saveAndFlush(any(PlaylistContent.class)))
+				.thenThrow(new DataIntegrityViolationException("unique constraint violation"));
+
+			assertThatThrownBy(() -> playlistService.addContentToPlaylist(ownerId, playlistId, contentId))
+				.isInstanceOf(PlaylistContentAlreadyExistsException.class);
 		}
 	}
 

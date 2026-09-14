@@ -16,11 +16,14 @@ import com.mopl.playlist.dto.*;
 import com.mopl.playlist.repository.PlaylistContentRepository;
 import com.mopl.playlist.repository.PlaylistRepository;
 import jakarta.persistence.EntityManager;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -46,7 +49,12 @@ public class PlaylistService {
 	}
 
 	public PlaylistResponse getPlaylist(UUID playlistId) {
-		return PlaylistResponse.from(findPlaylistOrThrow(playlistId));
+		Playlist playlist = findPlaylistOrThrow(playlistId);
+		List<Content> contents = playlistContentRepository.findAllByPlaylistId(playlistId).stream()
+			.map(PlaylistContent::getContent)
+			.toList();
+
+		return PlaylistResponse.from(playlist, contents);
 	}
 
 	public PlaylistListResponse getPlaylists(
@@ -80,7 +88,7 @@ public class PlaylistService {
 				: "0";
 		}
 
-		List<PlaylistResponse> data = pageContent.stream().map(PlaylistResponse::from).toList();
+		List<PlaylistResponse> data = mapToResponsesWithContents(pageContent);
 		long totalCount = playlistRepository.count();
 
 		return new PlaylistListResponse(
@@ -139,7 +147,11 @@ public class PlaylistService {
 			throw new PlaylistContentAlreadyExistsException();
 		}
 
-		playlistContentRepository.save(new PlaylistContent(playlist, content));
+		try {
+			playlistContentRepository.saveAndFlush(new PlaylistContent(playlist, content));
+		} catch (DataIntegrityViolationException e) {
+			throw new PlaylistContentAlreadyExistsException();
+		}
 	}
 
 	@Transactional
@@ -152,6 +164,24 @@ public class PlaylistService {
 			.orElseThrow(PlaylistContentNotFoundException::new);
 
 		playlistContentRepository.delete(playlistContent);
+	}
+
+	private List<PlaylistResponse> mapToResponsesWithContents(List<Playlist> playlists) {
+		List<UUID> playlistIds = playlists.stream().map(Playlist::getId).toList();
+
+		Map<UUID, List<Content>> contentsByPlaylistId = playlistContentRepository
+			.findAllByPlaylistIdIn(playlistIds).stream()
+			.collect(Collectors.groupingBy(
+				pc -> pc.getPlaylist().getId(),
+				Collectors.mapping(PlaylistContent::getContent, Collectors.toList())
+			));
+
+		return playlists.stream()
+			.map(playlist -> PlaylistResponse.from(
+				playlist,
+				contentsByPlaylistId.getOrDefault(playlist.getId(), List.of())
+			))
+			.toList();
 	}
 
 	private Playlist findPlaylistOrThrow(UUID playlistId) {

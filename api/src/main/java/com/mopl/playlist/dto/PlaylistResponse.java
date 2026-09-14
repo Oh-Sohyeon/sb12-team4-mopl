@@ -1,5 +1,6 @@
 package com.mopl.playlist.dto;
 
+import com.mopl.core.domain.content.entity.Content;
 import com.mopl.core.domain.playlist.entity.Playlist;
 
 import java.time.LocalDateTime;
@@ -17,9 +18,18 @@ public record PlaylistResponse(
 	LocalDateTime updatedAt,
 	long subscriberCount,
 	boolean subscribedByMe,
-	List<Object> contents // TODO: 콘텐츠 연결 이슈에서 ContentSummary로 교체
+	List<ContentSummary> contents
 ) {
 	public static PlaylistResponse from(Playlist playlist) {
+		return from(playlist, Collections.emptyList());
+	}
+
+	public static PlaylistResponse from(Playlist playlist, List<Content> contents) {
+		List<ContentSummary> contentSummaries = contents.stream()
+			.filter(content -> content.getDeletedAt() == null) // soft delete된 콘텐츠 제외
+			.map(ContentSummary::from)
+			.toList();
+
 		return new PlaylistResponse(
 			playlist.getId(),
 			playlist.getOwner().getId(),
@@ -30,7 +40,7 @@ public record PlaylistResponse(
 			playlist.getUpdatedAt(),
 			0L,     // TODO: 구독 이슈에서 실제 집계로 교체
 			false,  // TODO: 구독 이슈에서 실제 값으로 교체
-			Collections.emptyList() // TODO: 콘텐츠 연결 이슈에서 실제 값으로 교체
+			contentSummaries
 		);
 	}
 }
