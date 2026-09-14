@@ -62,7 +62,7 @@ class NotificationServiceTest {
       given(notification.getLevel()).willReturn(NotificationLevel.INFO);
 
       given(userRepository.findById(userId)).willReturn(Optional.of(user));
-      given(notificationRepository.findByReceiverWithCursor(user, null, null, 21))
+      given(notificationRepository.findByReceiverWithCursor(user, null, null, 21, "DESCENDING"))
           .willReturn(List.of(notification));
       given(notificationRepository.countByReceiver(user)).willReturn(1L);
 
@@ -92,7 +92,7 @@ class NotificationServiceTest {
       );
 
       given(userRepository.findById(userId)).willReturn(Optional.of(user));
-      given(notificationRepository.findByReceiverWithCursor(user, null, null, 3))
+      given(notificationRepository.findByReceiverWithCursor(user, null, null, 3, "DESCENDING"))
           .willReturn(notifications);
       given(notificationRepository.countByReceiver(user)).willReturn(10L);
 

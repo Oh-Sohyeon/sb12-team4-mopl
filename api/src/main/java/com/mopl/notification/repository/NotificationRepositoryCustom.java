@@ -10,7 +10,7 @@ import java.util.UUID;
 public interface NotificationRepositoryCustom {
 
   List<Notification> findByReceiverWithCursor(
-      User receiver, UUID idAfter, LocalDateTime cursor, int size
+      User receiver, UUID idAfter, LocalDateTime cursor, int size, String sortDirection
   );
 
   long countByReceiver(User receiver);

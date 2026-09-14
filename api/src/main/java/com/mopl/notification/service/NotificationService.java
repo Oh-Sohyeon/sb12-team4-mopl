@@ -31,7 +31,7 @@ public class NotificationService {
         .orElseThrow(NotificationNotFoundException::new);
 
     List<Notification> notifications =
-        notificationRepository.findByReceiverWithCursor(receiver, idAfter, cursor, limit + 1);
+        notificationRepository.findByReceiverWithCursor(receiver, idAfter, cursor, limit + 1, sortDirection);
 
     boolean hasNext = notifications.size() > limit;
     List<Notification> content = hasNext ? notifications.subList(0, limit) : notifications;
