@@ -1,7 +1,7 @@
 package com.mopl.notification.service;
 
 import com.mopl.common.exception.notification.NotificationNotFoundException;
-import com.mopl.common.exception.user.repository.UserRepository;
+import com.mopl.user.repository.UserRepository;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.core.common.enums.NotificationLevel;
 import com.mopl.core.domain.notification.entity.Notification;
@@ -24,13 +24,17 @@ public class NotificationService {
   private final NotificationRepository notificationRepository;
   private final UserRepository userRepository;
 
-  public CursorResponse<NotificationResponse> getNotifications(UUID userId, UUID cursorId, LocalDateTime cursorCreatedAt, int size) {
+  public CursorResponse<NotificationResponse> getNotifications(
+      UUID userId, LocalDateTime cursor, UUID idAfter, int limit, String sortBy, String sortDirection
+  ) {
     User receiver = userRepository.findById(userId)
         .orElseThrow(NotificationNotFoundException::new);
 
-    List<Notification> notifications = notificationRepository.findByReceiverWithCursor(receiver, cursorId, cursorCreatedAt, size+1);
-    boolean hasNext = notifications.size() > size;
-    List<Notification> content = hasNext ? notifications.subList(0, size) : notifications;
+    List<Notification> notifications =
+        notificationRepository.findByReceiverWithCursor(receiver, idAfter, cursor, limit + 1);
+
+    boolean hasNext = notifications.size() > limit;
+    List<Notification> content = hasNext ? notifications.subList(0, limit) : notifications;
 
     List<NotificationResponse> data = content.stream()
         .map(NotificationResponse::from)
@@ -39,23 +43,22 @@ public class NotificationService {
     String nextCursor = hasNext ? content.get(content.size() - 1).getCreatedAt().toString() : null;
     String nextIdAfter = hasNext ? content.get(content.size() - 1).getId().toString() : null;
 
-    return CursorResponse.of(
-        data,
-        nextCursor,
-        nextIdAfter,
-        hasNext,
-        notificationRepository.countByReceiver(receiver),  // 아래에서 추가할 메서드
-        "createdAt",
-        "DESCENDING"
-    );
+    long totalCount = notificationRepository.countByReceiver(receiver);
+
+    return CursorResponse.of(data, nextCursor, nextIdAfter, hasNext, totalCount, sortBy, sortDirection);
   }
 
+  @Transactional
   public void readNotification(UUID userId, UUID notificationId) {
     Notification notification = notificationRepository.findById(notificationId)
         .orElseThrow(NotificationNotFoundException::new);
 
     if (!notification.getReceiver().getId().equals(userId)) {
       throw new NotificationNotFoundException();
+    }
+
+    if (notification.isRead()) {
+      return;
     }
 
     notification.markAsRead();

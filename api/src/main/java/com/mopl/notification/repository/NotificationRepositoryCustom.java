@@ -10,12 +10,8 @@ import java.util.UUID;
 public interface NotificationRepositoryCustom {
 
   List<Notification> findByReceiverWithCursor(
-      User receiver,
-      UUID cursorId,
-      LocalDateTime cursorCreatedAt,
-      int size
+      User receiver, UUID idAfter, LocalDateTime cursor, int size
   );
 
   long countByReceiver(User receiver);
-
 }

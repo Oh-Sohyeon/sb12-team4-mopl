@@ -18,18 +18,19 @@ public class NotificationRepositoryImpl implements NotificationRepositoryCustom 
 
   @Override
   public List<Notification> findByReceiverWithCursor(
-      User receiver, UUID cursorId, LocalDateTime cursorCreatedAt, int size
+      User receiver, UUID idAfter, LocalDateTime cursor, int size
   ) {
     QNotification notification = QNotification.notification;
 
     BooleanBuilder builder = new BooleanBuilder();
     builder.and(notification.receiver.eq(receiver));
+    builder.and(notification.read.isFalse());   // ← 추가: 안 읽은 것만
 
-    if (cursorId != null && cursorCreatedAt != null) {
+    if (idAfter != null && cursor != null) {
       builder.and(
-          notification.createdAt.lt(cursorCreatedAt)
-              .or(notification.createdAt.eq(cursorCreatedAt)
-                  .and(notification.id.lt(cursorId)))
+          notification.createdAt.lt(cursor)
+              .or(notification.createdAt.eq(cursor)
+                  .and(notification.id.lt(idAfter)))
       );
     }
 
@@ -47,7 +48,10 @@ public class NotificationRepositoryImpl implements NotificationRepositoryCustom 
     Long count = queryFactory
         .select(notification.count())
         .from(notification)
-        .where(notification.receiver.eq(receiver))
+        .where(
+            notification.receiver.eq(receiver),
+            notification.read.isFalse()
+        )
         .fetchOne();
     return count != null ? count : 0L;
   }

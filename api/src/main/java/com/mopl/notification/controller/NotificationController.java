@@ -25,16 +25,18 @@ public class NotificationController {
   @GetMapping
   public ResponseEntity<CursorResponse<NotificationResponse>> getNotifications(
       @RequestParam UUID userId,
-      @RequestParam(required = false) UUID cursorId,
-      @RequestParam(required = false) LocalDateTime cursorCreatedAt,
-      @RequestParam(defaultValue = "20") int size
+      @RequestParam(required = false) LocalDateTime cursor,
+      @RequestParam(required = false) UUID idAfter,
+      @RequestParam(defaultValue = "20") int limit,
+      @RequestParam(defaultValue = "createdAt") String sortBy,
+      @RequestParam(defaultValue = "DESCENDING") String sortDirection
   ) {
-    CursorResponse<NotificationResponse> notifications = notificationService.getNotifications(userId, cursorId, cursorCreatedAt, size);
+    CursorResponse<NotificationResponse> notifications =
+        notificationService.getNotifications(userId, cursor, idAfter, limit, sortBy, sortDirection);
     return ResponseEntity.ok(notifications);
-
   }
 
-  @DeleteMapping("/{notificationId")
+  @DeleteMapping("/{notificationId}")
   public ResponseEntity<Void> deleteNotification(@RequestParam UUID userId, @PathVariable UUID notificationId) {
     notificationService.readNotification(userId, notificationId);
     return ResponseEntity.noContent().build();
