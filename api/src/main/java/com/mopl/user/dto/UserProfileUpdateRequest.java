@@ -1,6 +1,6 @@
 package com.mopl.user.dto;
 
-public record UserProfileUpdaterRequest(
+public record UserProfileUpdateRequest(
         String name
 ) {
 }

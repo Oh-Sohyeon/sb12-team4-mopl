@@ -3,9 +3,9 @@ package com.mopl.user.controller;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.user.dto.CursorPageResponse;
 import com.mopl.user.dto.UserLockedUpdateRequest;
-import com.mopl.user.dto.UserProfileUpdaterRequest;
+import com.mopl.user.dto.UserProfileUpdateRequest;
 import com.mopl.user.dto.UserResponse;
-import com.mopl.user.dto.UserRoleUpdaterRequest;
+import com.mopl.user.dto.UserRoleUpdateRequest;
 import com.mopl.user.dto.UserSearchCondition;
 import com.mopl.auth.util.SecurityUtil;
 import com.mopl.user.service.UserService;
@@ -59,7 +59,7 @@ public class UserController {
     @PatchMapping(value = "/{userId}", consumes = "multipart/form-data")
     public UserResponse updateProfile(
             @PathVariable UUID userId,
-            @RequestPart UserProfileUpdaterRequest request,
+            @RequestPart UserProfileUpdateRequest request,
             @RequestPart(required = false) MultipartFile image
     ) {
         // TODO: image 가 존재하면 S3 업로드 후 URL 을 profileImageUrl 로 전달
@@ -85,7 +85,7 @@ public class UserController {
     /** [어드민] 권한 수정 */
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{userId}/role")
-    public UserResponse updateRole(@PathVariable UUID userId, @Valid @RequestBody UserRoleUpdaterRequest request) {
+    public UserResponse updateRole(@PathVariable UUID userId, @Valid @RequestBody UserRoleUpdateRequest request) {
         return userService.updateRole(userId, request.role());
     }
 }
