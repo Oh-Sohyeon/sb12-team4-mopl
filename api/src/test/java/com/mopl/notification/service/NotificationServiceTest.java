@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import static org.mockito.ArgumentMatchers.any;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
@@ -85,6 +87,26 @@ class NotificationServiceTest {
       assertThatThrownBy(() ->
           notificationService.getNotifications(userId, null, null, 20)
       ).isInstanceOf(NotificationNotFoundException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("알림 생성")
+  class CreateNotification {
+
+    @Test
+    @DisplayName("성공 - 알림이 정상적으로 생성되어 저장된다")
+    void 알림_생성_성공() {
+      // given
+      User receiver = mock(User.class);
+
+      // when
+      notificationService.createNotification(
+          receiver, "팔로우 알림", "OO님이 팔로우했습니다.", NotificationLevel.INFO
+      );
+
+      // then
+      then(notificationRepository).should().save(any());
     }
   }
 }

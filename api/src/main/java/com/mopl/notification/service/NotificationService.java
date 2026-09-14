@@ -3,6 +3,7 @@ package com.mopl.notification.service;
 import com.mopl.common.exception.notification.NotificationNotFoundException;
 import com.mopl.common.exception.user.repository.UserRepository;
 import com.mopl.core.common.dto.CursorResponse;
+import com.mopl.core.common.enums.NotificationLevel;
 import com.mopl.core.domain.notification.entity.Notification;
 import com.mopl.core.domain.user.entity.User;
 import com.mopl.notification.dto.NotificationResponse;
@@ -58,5 +59,11 @@ public class NotificationService {
     }
 
     notification.markAsRead();
+  }
+
+  @Transactional
+  public void createNotification(User receiver, String title, String content, NotificationLevel level) {
+    Notification notification = new Notification(receiver, title, content, level);
+    notificationRepository.save(notification);
   }
 }
