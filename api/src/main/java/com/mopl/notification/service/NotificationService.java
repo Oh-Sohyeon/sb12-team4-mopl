@@ -48,4 +48,15 @@ public class NotificationService {
         "DESCENDING"
     );
   }
+
+  public void readNotification(UUID userId, UUID notificationId) {
+    Notification notification = notificationRepository.findById(notificationId)
+        .orElseThrow(NotificationNotFoundException::new);
+
+    if (!notification.getReceiver().getId().equals(userId)) {
+      throw new NotificationNotFoundException();
+    }
+
+    notification.markAsRead();
+  }
 }

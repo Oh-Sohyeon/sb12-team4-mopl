@@ -34,9 +34,10 @@ public class NotificationController {
 
   }
 
-//  @DeleteMapping("/{notificationId")
-//  public ResponseEntity<Void> deleteNotification(@PathVariable UUID notificationId) {
-//
-//  }
+  @DeleteMapping("/{notificationId")
+  public ResponseEntity<Void> deleteNotification(@RequestParam UUID userId, @PathVariable UUID notificationId) {
+    notificationService.readNotification(userId, notificationId);
+    return ResponseEntity.noContent().build();
+  }
 
 }
