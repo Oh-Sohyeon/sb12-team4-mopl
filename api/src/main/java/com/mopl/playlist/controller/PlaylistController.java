@@ -78,4 +78,24 @@ public class PlaylistController {
 
 		return ResponseEntity.noContent().build();
 	}
+
+	@PostMapping("/{playlistId}/contents/{contentId}")
+	public ResponseEntity<Void> addContentToPlaylist(
+		@RequestParam UUID requesterId,
+		@PathVariable UUID playlistId,
+		@PathVariable UUID contentId
+	) {
+		playlistService.addContentToPlaylist(requesterId, playlistId, contentId);
+		return ResponseEntity.noContent().build();
+	}
+
+	@DeleteMapping("/{playlistId}/contents/{contentId}")
+	public ResponseEntity<Void> removeContentFromPlaylist(
+		@RequestParam UUID requesterId,
+		@PathVariable UUID playlistId,
+		@PathVariable UUID contentId
+	) {
+		playlistService.removeContentFromPlaylist(requesterId, playlistId, contentId);
+		return ResponseEntity.noContent().build();
+	}
 }

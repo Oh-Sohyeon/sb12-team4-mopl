@@ -19,6 +19,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.junit.jupiter.api.Disabled;
+import com.mopl.common.exception.content.ContentNotFoundException;
+import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
+import com.mopl.common.exception.playlist.PlaylistContentNotFoundException;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -53,7 +56,7 @@ class PlaylistControllerTest {
 		playlistId = UUID.randomUUID();
 		ownerId = UUID.randomUUID();
 		sampleResponse = new PlaylistResponse(
-			playlistId, ownerId, "성준", "http://image.url",
+			playlistId, ownerId, "길동", "http://image.url",
 			"제목", "설명", LocalDateTime.now(),
 			0L, false, Collections.emptyList()
 		);
@@ -248,6 +251,102 @@ class PlaylistControllerTest {
 			mockMvc.perform(delete("/playlists/{playlistId}", playlistId)
 					.param("requesterId", ownerId.toString()))
 				.andExpect(status().isNotFound());
+		}
+	}
+
+	@Nested
+	@DisplayName("콘텐츠 추가")
+	class AddContentToPlaylist {
+
+		@Test
+		@DisplayName("콘텐츠 추가 성공 시 204를 반환한다")
+		void success() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			doNothing().when(playlistService).addContentToPlaylist(ownerId, playlistId, contentId);
+
+			mockMvc.perform(post("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", ownerId.toString()))
+				.andExpect(status().isNoContent());
+		}
+
+		@Test
+		@DisplayName("소유자가 아니면 403을 반환한다")
+		void notOwner_forbidden() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			UUID otherUserId = UUID.randomUUID();
+			doThrow(new PlaylistAccessDeniedException())
+				.when(playlistService).addContentToPlaylist(otherUserId, playlistId, contentId);
+
+			mockMvc.perform(post("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", otherUserId.toString()))
+				.andExpect(status().isForbidden());
+		}
+
+		@Test
+		@DisplayName("존재하지 않는 콘텐츠면 404를 반환한다")
+		void contentNotFound() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			doThrow(new ContentNotFoundException())
+				.when(playlistService).addContentToPlaylist(ownerId, playlistId, contentId);
+
+			mockMvc.perform(post("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", ownerId.toString()))
+				.andExpect(status().isNotFound());
+		}
+
+		@Test
+		@DisplayName("이미 추가된 콘텐츠면 400을 반환한다")
+		void alreadyExists() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			doThrow(new PlaylistContentAlreadyExistsException())
+				.when(playlistService).addContentToPlaylist(ownerId, playlistId, contentId);
+
+			mockMvc.perform(post("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", ownerId.toString()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("PLAYLIST_003"));
+		}
+	}
+
+	@Nested
+	@DisplayName("콘텐츠 삭제")
+	class RemoveContentFromPlaylist {
+
+		@Test
+		@DisplayName("콘텐츠 삭제 성공 시 204를 반환한다")
+		void success() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			doNothing().when(playlistService).removeContentFromPlaylist(ownerId, playlistId, contentId);
+
+			mockMvc.perform(delete("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", ownerId.toString()))
+				.andExpect(status().isNoContent());
+		}
+
+		@Test
+		@DisplayName("소유자가 아니면 403을 반환한다")
+		void notOwner_forbidden() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			UUID otherUserId = UUID.randomUUID();
+			doThrow(new PlaylistAccessDeniedException())
+				.when(playlistService).removeContentFromPlaylist(otherUserId, playlistId, contentId);
+
+			mockMvc.perform(delete("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", otherUserId.toString()))
+				.andExpect(status().isForbidden());
+		}
+
+		@Test
+		@DisplayName("연결된 콘텐츠가 없으면 404를 반환한다")
+		void notFound() throws Exception {
+			UUID contentId = UUID.randomUUID();
+			doThrow(new PlaylistContentNotFoundException())
+				.when(playlistService).removeContentFromPlaylist(ownerId, playlistId, contentId);
+
+			mockMvc.perform(delete("/playlists/{playlistId}/contents/{contentId}", playlistId, contentId)
+					.param("requesterId", ownerId.toString()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("PLAYLIST_004"));
 		}
 	}
 }

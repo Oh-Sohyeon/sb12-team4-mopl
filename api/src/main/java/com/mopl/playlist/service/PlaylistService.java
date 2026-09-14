@@ -2,11 +2,18 @@ package com.mopl.playlist.service;
 
 import com.mopl.common.exception.CommonErrorCode;
 import com.mopl.common.exception.MoplException;
+import com.mopl.common.exception.content.ContentNotFoundException;
 import com.mopl.common.exception.playlist.PlaylistAccessDeniedException;
+import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
+import com.mopl.common.exception.playlist.PlaylistContentNotFoundException;
 import com.mopl.common.exception.playlist.PlaylistNotFoundException;
+import com.mopl.content.repository.ContentRepository;
+import com.mopl.core.domain.content.entity.Content;
 import com.mopl.core.domain.playlist.entity.Playlist;
+import com.mopl.core.domain.playlist.entity.PlaylistContent;
 import com.mopl.core.domain.user.entity.User;
 import com.mopl.playlist.dto.*;
+import com.mopl.playlist.repository.PlaylistContentRepository;
 import com.mopl.playlist.repository.PlaylistRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
@@ -23,10 +30,19 @@ public class PlaylistService {
 
 	private final PlaylistRepository playlistRepository;
 	private final EntityManager entityManager;
+	private final PlaylistContentRepository playlistContentRepository;
+	private final ContentRepository contentRepository;
 
-	public PlaylistService(PlaylistRepository playlistRepository, EntityManager entityManager) {
+	public PlaylistService(
+		PlaylistRepository playlistRepository,
+		EntityManager entityManager,
+		PlaylistContentRepository playlistContentRepository,
+		ContentRepository contentRepository
+	) {
 		this.playlistRepository = playlistRepository;
 		this.entityManager = entityManager;
+		this.playlistContentRepository = playlistContentRepository;
+		this.contentRepository = contentRepository;
 	}
 
 	public PlaylistResponse getPlaylist(UUID playlistId) {
@@ -99,7 +115,7 @@ public class PlaylistService {
 		validateOwner(playlist, requesterId);
 
 		playlist.update(request.title(), request.description());
-		entityManager.flush();  // @PreUpdate 즉시 실행 -> updatedAt 갱신 보장
+		entityManager.flush();
 
 		return PlaylistResponse.from(playlist);
 	}
@@ -109,6 +125,33 @@ public class PlaylistService {
 		Playlist playlist = findPlaylistOrThrow(playlistId);
 		validateOwner(playlist, requesterId);
 		playlistRepository.delete(playlist);
+	}
+
+	@Transactional
+	public void addContentToPlaylist(UUID requesterId, UUID playlistId, UUID contentId) {
+		Playlist playlist = findPlaylistOrThrow(playlistId);
+		validateOwner(playlist, requesterId);
+
+		Content content = contentRepository.findByIdAndDeletedAtIsNull(contentId)
+			.orElseThrow(ContentNotFoundException::new);
+
+		if (playlistContentRepository.existsByPlaylistIdAndContentId(playlistId, contentId)) {
+			throw new PlaylistContentAlreadyExistsException();
+		}
+
+		playlistContentRepository.save(new PlaylistContent(playlist, content));
+	}
+
+	@Transactional
+	public void removeContentFromPlaylist(UUID requesterId, UUID playlistId, UUID contentId) {
+		Playlist playlist = findPlaylistOrThrow(playlistId);
+		validateOwner(playlist, requesterId);
+
+		PlaylistContent playlistContent = playlistContentRepository
+			.findByPlaylistIdAndContentId(playlistId, contentId)
+			.orElseThrow(PlaylistContentNotFoundException::new);
+
+		playlistContentRepository.delete(playlistContent);
 	}
 
 	private Playlist findPlaylistOrThrow(UUID playlistId) {
