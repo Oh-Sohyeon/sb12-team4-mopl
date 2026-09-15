@@ -29,7 +29,9 @@ import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
 import com.mopl.common.exception.playlist.PlaylistContentNotFoundException;
 import com.mopl.core.domain.content.entity.Content;
 import com.mopl.core.domain.playlist.entity.PlaylistContent;
+import com.mopl.playlist.repository.PlaylistSubscriptionRepository;
 
+import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -56,6 +58,9 @@ class PlaylistServiceTest {
 	@Mock
 	private ContentRepository contentRepository;
 
+	@Mock
+	private PlaylistSubscriptionRepository playlistSubscriptionRepository;
+
 	private PlaylistService playlistService;
 
 	private UUID ownerId;
@@ -65,7 +70,7 @@ class PlaylistServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		playlistService = new PlaylistService(playlistRepository, entityManager, playlistContentRepository, contentRepository);
+		playlistService = new PlaylistService(playlistRepository, entityManager, playlistContentRepository, contentRepository, playlistSubscriptionRepository);
 
 		ownerId = UUID.randomUUID();
 		owner = mock(User.class);
@@ -91,8 +96,9 @@ class PlaylistServiceTest {
 		void success() {
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
 			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistId(playlistId)).thenReturn(0L);
 
-			PlaylistResponse response = playlistService.getPlaylist(playlistId);
+			PlaylistResponse response = playlistService.getPlaylist(playlistId, null);
 
 			assertThat(response.id()).isEqualTo(playlistId);
 			assertThat(response.ownerId()).isEqualTo(ownerId);
@@ -120,7 +126,7 @@ class PlaylistServiceTest {
 			when(playlistContentRepository.findAllByPlaylistId(playlistId))
 				.thenReturn(List.of(playlistContent));
 
-			PlaylistResponse response = playlistService.getPlaylist(playlistId);
+			PlaylistResponse response = playlistService.getPlaylist(playlistId, null);
 
 			assertThat(response.contents()).hasSize(1);
 			assertThat(response.contents().get(0).id()).isEqualTo(contentId);
@@ -132,7 +138,7 @@ class PlaylistServiceTest {
 		void notFound() {
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.empty());
 
-			assertThatThrownBy(() -> playlistService.getPlaylist(playlistId))
+			assertThatThrownBy(() -> playlistService.getPlaylist(playlistId, null))
 				.isInstanceOf(PlaylistNotFoundException.class);
 		}
 	}
@@ -145,11 +151,11 @@ class PlaylistServiceTest {
 		@DisplayName("limit이 0 이하면 예외가 발생한다")
 		void limitZeroOrNegative_throws() {
 			assertThatThrownBy(() ->
-				playlistService.getPlaylists(null, null, 0, "updatedAt", "DESCENDING")
+				playlistService.getPlaylists(null, null, 0, "updatedAt", "DESCENDING", null)
 			).isInstanceOf(MoplException.class);
 
 			assertThatThrownBy(() ->
-				playlistService.getPlaylists(null, null, -1, "updatedAt", "DESCENDING")
+				playlistService.getPlaylists(null, null, -1, "updatedAt", "DESCENDING", null)
 			).isInstanceOf(MoplException.class);
 
 			verifyNoInteractions(playlistRepository);
@@ -159,11 +165,11 @@ class PlaylistServiceTest {
 		@DisplayName("cursor와 idAfter 중 하나만 있으면 예외가 발생한다")
 		void cursorIdAfterMismatch_throws() {
 			assertThatThrownBy(() ->
-				playlistService.getPlaylists("2026-01-01T00:00:00", null, 20, "updatedAt", "DESCENDING")
+				playlistService.getPlaylists("2026-01-01T00:00:00", null, 20, "updatedAt", "DESCENDING", null)
 			).isInstanceOf(MoplException.class);
 
 			assertThatThrownBy(() ->
-				playlistService.getPlaylists(null, UUID.randomUUID(), 20, "updatedAt", "DESCENDING")
+				playlistService.getPlaylists(null, UUID.randomUUID(), 20, "updatedAt", "DESCENDING", null)
 			).isInstanceOf(MoplException.class);
 		}
 
@@ -171,7 +177,7 @@ class PlaylistServiceTest {
 		@DisplayName("지원하지 않는 sortBy 값이면 예외가 발생한다")
 		void invalidSortBy_throws() {
 			assertThatThrownBy(() ->
-				playlistService.getPlaylists(null, null, 20, "invalidSort", "DESCENDING")
+				playlistService.getPlaylists(null, null, 20, "invalidSort", "DESCENDING", null)
 			).isInstanceOf(MoplException.class);
 		}
 
@@ -183,9 +189,10 @@ class PlaylistServiceTest {
 				.thenReturn(playlists);
 			when(playlistRepository.count()).thenReturn(10L);
 			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistIdIn(any())).thenReturn(Map.of());
 
 			PlaylistListResponse response = playlistService.getPlaylists(
-				null, null, 2, "updatedAt", "DESCENDING"
+				null, null, 2, "updatedAt", "DESCENDING", null
 			);
 
 			assertThat(response.hasNext()).isTrue();
@@ -202,9 +209,10 @@ class PlaylistServiceTest {
 				.thenReturn(playlists);
 			when(playlistRepository.count()).thenReturn(1L);
 			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistIdIn(any())).thenReturn(Map.of());
 
 			PlaylistListResponse response = playlistService.getPlaylists(
-				null, null, 20, "updatedAt", "DESCENDING"
+				null, null, 20, "updatedAt", "DESCENDING", null
 			);
 
 			assertThat(response.hasNext()).isFalse();
@@ -219,8 +227,9 @@ class PlaylistServiceTest {
 				.thenReturn(List.of());
 			when(playlistRepository.count()).thenReturn(0L);
 			when(playlistContentRepository.findAllByPlaylistIdIn(any())).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistIdIn(any())).thenReturn(Map.of());
 
-			playlistService.getPlaylists(null, null, 200, "updatedAt", "DESCENDING");
+			playlistService.getPlaylists(null, null, 200, "updatedAt", "DESCENDING", null);
 
 			verify(playlistRepository).findAllByCursor(any(), any(), eq(101), any(), any());
 		}
@@ -307,6 +316,8 @@ class PlaylistServiceTest {
 			PlaylistUpdateRequest request = new PlaylistUpdateRequest("새 제목", "새 설명");
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
 			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistId(playlistId)).thenReturn(0L);
+			when(playlistSubscriptionRepository.existsByPlaylistIdAndSubscriberId(playlistId, ownerId)).thenReturn(false);
 
 			playlistService.updatePlaylist(ownerId, playlistId, request);
 
@@ -330,6 +341,8 @@ class PlaylistServiceTest {
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
 			when(playlistContentRepository.findAllByPlaylistId(playlistId))
 				.thenReturn(List.of(playlistContent));
+			when(playlistSubscriptionRepository.countByPlaylistId(playlistId)).thenReturn(0L);
+			when(playlistSubscriptionRepository.existsByPlaylistIdAndSubscriberId(playlistId, ownerId)).thenReturn(false);
 
 			PlaylistResponse response = playlistService.updatePlaylist(ownerId, playlistId, request);
 
@@ -343,6 +356,8 @@ class PlaylistServiceTest {
 			PlaylistUpdateRequest request = new PlaylistUpdateRequest(null, null);
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
 			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
+			when(playlistSubscriptionRepository.countByPlaylistId(playlistId)).thenReturn(0L);
+			when(playlistSubscriptionRepository.existsByPlaylistIdAndSubscriberId(playlistId, ownerId)).thenReturn(false);
 
 			playlistService.updatePlaylist(ownerId, playlistId, request);
 

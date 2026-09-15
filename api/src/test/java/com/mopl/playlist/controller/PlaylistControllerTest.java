@@ -69,7 +69,7 @@ class PlaylistControllerTest {
 		@Test
 		@DisplayName("존재하는 플레이리스트를 조회하면 200과 본문을 반환한다")
 		void success() throws Exception {
-			when(playlistService.getPlaylist(playlistId)).thenReturn(sampleResponse);
+			when(playlistService.getPlaylist(eq(playlistId), any())).thenReturn(sampleResponse);
 
 			mockMvc.perform(get("/playlists/{playlistId}", playlistId))
 				.andExpect(status().isOk())
@@ -80,7 +80,7 @@ class PlaylistControllerTest {
 		@Test
 		@DisplayName("존재하지 않는 플레이리스트를 조회하면 404와 오류 코드를 반환한다")
 		void notFound() throws Exception {
-			when(playlistService.getPlaylist(playlistId)).thenThrow(new PlaylistNotFoundException());
+			when(playlistService.getPlaylist(eq(playlistId), any())).thenThrow(new PlaylistNotFoundException());
 
 			mockMvc.perform(get("/playlists/{playlistId}", playlistId))
 				.andExpect(status().isNotFound())
@@ -99,7 +99,7 @@ class PlaylistControllerTest {
 				List.of(sampleResponse), null, null, false,
 				"updatedAt", "DESCENDING", 1L
 			);
-			when(playlistService.getPlaylists(any(), any(), eq(20), eq("updatedAt"), eq("DESCENDING")))
+			when(playlistService.getPlaylists(any(), any(), eq(20), eq("updatedAt"), eq("DESCENDING"), any()))
 				.thenReturn(response);
 
 			mockMvc.perform(get("/playlists")
