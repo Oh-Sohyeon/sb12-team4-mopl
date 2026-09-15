@@ -342,6 +342,7 @@ class PlaylistServiceTest {
 		void allFieldsNull_stillCallsUpdate() {
 			PlaylistUpdateRequest request = new PlaylistUpdateRequest(null, null);
 			when(playlistRepository.findById(playlistId)).thenReturn(Optional.of(playlist));
+			when(playlistContentRepository.findAllByPlaylistId(playlistId)).thenReturn(List.of());
 
 			playlistService.updatePlaylist(ownerId, playlistId, request);
 
