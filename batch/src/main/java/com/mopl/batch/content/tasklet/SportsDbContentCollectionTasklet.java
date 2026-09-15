@@ -63,7 +63,7 @@ public class SportsDbContentCollectionTasklet implements Tasklet {
         int affectedRows = contentBulkRepository.upsertAll(contents);
 
         log.info(
-                "TheSportsDB 콘텐ㅊ 수집 완료. collectionDate={}, collectedCount={}, affectedRows={}",
+                "TheSportsDB 콘텐츠 수집 완료. collectionDate={}, collectedCount={}, affectedRows={}",
                 collectionDate,
                 contents.size(),
                 affectedRows
@@ -73,13 +73,10 @@ public class SportsDbContentCollectionTasklet implements Tasklet {
     }
 
     private LocalDate resolveCollectionDate(ChunkContext chunkContext) {
-        Map<String, Object> jobParameters = chunkContext.getStepContext().getJobParameters();
+        Map<String, Object> jobParameters =
+                chunkContext.getStepContext().getJobParameters();
 
         Object collectionDate = jobParameters.get(COLLECTION_DATE_PARAMETER);
-
-        if (collectionDate == null) {
-            return LocalDate.now();
-        }
 
         return LocalDate.parse(collectionDate.toString());
     }

@@ -9,11 +9,7 @@ import com.mopl.batch.external.tmdb.dto.TmdbMovieResponse;
 import com.mopl.batch.external.tmdb.dto.TmdbTv;
 import com.mopl.batch.external.tmdb.dto.TmdbTvResponse;
 import org.junit.jupiter.api.Test;
-import org.springframework.batch.core.BatchStatus;
-import org.springframework.batch.core.Job;
-import org.springframework.batch.core.JobExecution;
-import org.springframework.batch.core.JobParameters;
-import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.*;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,10 +23,12 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @Testcontainers
@@ -49,7 +47,8 @@ class ContentCollectionJobIntegrationTest {
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("mopl")
             .withUsername("mopl")
-            .withPassword("test");
+            .withPassword("test")
+            .withStartupTimeout(Duration.ofMinutes(5));
 
     @DynamicPropertySource
     static void configureDatasource(DynamicPropertyRegistry registry) {
@@ -185,5 +184,32 @@ class ContentCollectionJobIntegrationTest {
 
         assertThat(execution.getStatus())
                 .isEqualTo(BatchStatus.FAILED);
+    }
+
+    @Test
+    void contentCollectionJobRejectsMissingCollectionDate() {
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addLong("run.id", System.nanoTime())
+                .toJobParameters();
+
+        assertThatThrownBy(
+                () -> jobLauncher.run(contentCollectionJob, jobParameters)
+        )
+                .isInstanceOf(JobParametersInvalidException.class)
+                .hasMessageContaining("collectionDate");
+    }
+
+    @Test
+    void contentCollectionJobRejectsInvalidCollectionDate() {
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addString("collectionDate", "2026-99-99")
+                .addLong("run.id", System.nanoTime())
+                .toJobParameters();
+
+        assertThatThrownBy(
+                () -> jobLauncher.run(contentCollectionJob, jobParameters)
+        )
+                .isInstanceOf(JobParametersInvalidException.class)
+                .hasMessageContaining("yyyy-MM-dd");
     }
 }
