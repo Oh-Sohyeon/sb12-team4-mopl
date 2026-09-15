@@ -99,7 +99,7 @@ class PlaylistControllerTest {
 				List.of(sampleResponse), null, null, false,
 				"updatedAt", "DESCENDING", 1L
 			);
-			when(playlistService.getPlaylists(any(), any(), eq(20), eq("updatedAt"), eq("DESCENDING"), any()))
+			when(playlistService.getPlaylists(any(), any(), eq(20), eq("updatedAt"), eq("DESCENDING"), any(), any()))
 				.thenReturn(response);
 
 			mockMvc.perform(get("/playlists")
@@ -120,6 +120,26 @@ class PlaylistControllerTest {
 					.param("sortBy", "updatedAt")
 					.param("sortDirection", "DESCENDING"))
 				.andExpect(status().isBadRequest());
+		}
+
+		@Test
+		@DisplayName("subscriberIdEqual 파라미터를 서비스에 전달한다")
+		void success_withSubscriberIdEqual() throws Exception {
+			UUID subscriberIdEqual = UUID.randomUUID();
+			PlaylistListResponse response = new PlaylistListResponse(
+				List.of(sampleResponse), null, null, false,
+				"updatedAt", "DESCENDING", 1L
+			);
+			when(playlistService.getPlaylists(any(), any(), eq(20), eq("updatedAt"), eq("DESCENDING"), any(), eq(subscriberIdEqual)))
+				.thenReturn(response);
+
+			mockMvc.perform(get("/playlists")
+					.param("limit", "20")
+					.param("sortBy", "updatedAt")
+					.param("sortDirection", "DESCENDING")
+					.param("subscriberIdEqual", subscriberIdEqual.toString()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.totalCount").value(1));
 		}
 	}
 

@@ -71,7 +71,8 @@ public class PlaylistService {
 	}
 
 	public PlaylistListResponse getPlaylists(
-		String cursor, UUID idAfter, int limit, String sortByParam, String sortDirectionParam, UUID requesterId
+		String cursor, UUID idAfter, int limit, String sortByParam, String sortDirectionParam,
+		UUID requesterId, UUID subscriberIdEqual
 	) {
 		if (limit <= 0) {
 			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
@@ -85,7 +86,7 @@ public class PlaylistService {
 		SortDirection sortDirection = SortDirection.from(sortDirectionParam);
 
 		List<Playlist> playlists = playlistRepository.findAllByCursor(
-			cursor, idAfter, safeLimit + 1, sortBy, sortDirection
+			cursor, idAfter, safeLimit + 1, sortBy, sortDirection, subscriberIdEqual
 		);
 
 		boolean hasNext = playlists.size() > safeLimit;
@@ -102,7 +103,7 @@ public class PlaylistService {
 		}
 
 		List<PlaylistResponse> data = mapToResponsesWithContents(pageContent, requesterId);
-		long totalCount = playlistRepository.count();
+		long totalCount = playlistRepository.countAllMatching(subscriberIdEqual);
 
 		return new PlaylistListResponse(
 			data, nextCursor, nextIdAfter, hasNext, sortByParam, sortDirectionParam, totalCount

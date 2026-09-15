@@ -7,8 +7,10 @@ import com.mopl.playlist.dto.PlaylistSortBy;
 import com.mopl.playlist.dto.SortDirection;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberExpression;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.mopl.common.exception.CommonErrorCode;
 import com.mopl.common.exception.MoplException;
@@ -38,13 +40,26 @@ public class PlaylistRepositoryImpl implements PlaylistRepositoryCustom {
 		);
 	}
 
+	// subscriberIdEqual이 주어졌을 때, 해당 사용자가 구독한 플레이리스트만 걸러내는 조건
+	private BooleanExpression subscriberEqualCondition(UUID subscriberIdEqual) {
+		return JPAExpressions
+			.selectOne()
+			.from(subscription)
+			.where(
+				subscription.playlist.id.eq(playlist.id)
+					.and(subscription.subscriber.id.eq(subscriberIdEqual))
+			)
+			.exists();
+	}
+
 	@Override
 	public List<Playlist> findAllByCursor(
 		String cursor,
 		UUID idAfter,
 		int limitPlusOne,
 		PlaylistSortBy sortBy,
-		SortDirection sortDirection
+		SortDirection sortDirection,
+		UUID subscriberIdEqual
 	) {
 		boolean isDesc = sortDirection == SortDirection.DESCENDING;
 
@@ -52,6 +67,9 @@ public class PlaylistRepositoryImpl implements PlaylistRepositoryCustom {
 
 		if (cursor != null && idAfter != null) {
 			condition.and(buildCursorCondition(sortBy, isDesc, cursor, idAfter));
+		}
+		if (subscriberIdEqual != null) {
+			condition.and(subscriberEqualCondition(subscriberIdEqual));
 		}
 
 		return queryFactory
@@ -61,6 +79,22 @@ public class PlaylistRepositoryImpl implements PlaylistRepositoryCustom {
 			.orderBy(buildOrderSpecifiers(sortBy, isDesc))
 			.limit(limitPlusOne)
 			.fetch();
+	}
+
+	@Override
+	public long countAllMatching(UUID subscriberIdEqual) {
+		BooleanBuilder condition = new BooleanBuilder();
+		if (subscriberIdEqual != null) {
+			condition.and(subscriberEqualCondition(subscriberIdEqual));
+		}
+
+		Long count = queryFactory
+			.select(playlist.count())
+			.from(playlist)
+			.where(condition)
+			.fetchOne();
+
+		return count != null ? count : 0L;
 	}
 
 	private BooleanBuilder buildCursorCondition(PlaylistSortBy sortBy, boolean isDesc, String cursor, UUID idAfter) {
