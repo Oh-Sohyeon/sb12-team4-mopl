@@ -33,6 +33,11 @@ public enum UserErrorCode implements ErrorCode {
             HttpStatus.BAD_REQUEST,
             "USER_005",
             "지원하지 않는 정렬 기준입니다."
+    ),
+    EMAIL_ALREADY_EXISTS(
+            HttpStatus.BAD_REQUEST,
+            "USER_006",
+            "이미 사용 중인 이메일입니다."
     );
 
     private final HttpStatus status;

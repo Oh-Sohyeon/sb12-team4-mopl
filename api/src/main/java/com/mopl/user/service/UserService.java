@@ -6,6 +6,7 @@ import com.mopl.common.exception.user.UserErrorCode;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.core.domain.user.entity.User;
 import com.mopl.user.dto.CursorPageResponse;
+import com.mopl.user.dto.UserCreateRequest;
 import com.mopl.user.dto.UserResponse;
 import com.mopl.user.dto.UserSearchCondition;
 import com.mopl.user.repository.UserRepository;
@@ -16,9 +17,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,26 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final TokenRedisService tokenRedisService;
+    private final PasswordEncoder passwordEncoder;
+
+    // ===================== 회원가입 =====================
+
+    @Transactional
+    public UserResponse signUp(UserCreateRequest request) {
+        if (userRepository.existsByEmailAndDeletedAtIsNull(request.email())) {
+            throw new MoplException(UserErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+        String encodedPassword = passwordEncoder.encode(request.password());
+        User user = new User(request.email(), encodedPassword, request.name(), null, UserRole.USER);
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // 중복 체크와 저장 사이 짧은 순간에 동시 요청이 들어와 DB UNIQUE 제약(uk_users_email)에 걸린 경우.
+            // 원인 모를 500 대신 동일한 의미의 400으로 변환해 응답한다.
+            throw new MoplException(UserErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+        return UserResponse.from(user);
+    }
 
     // ===================== 조회 =====================
 
