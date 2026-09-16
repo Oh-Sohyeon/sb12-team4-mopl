@@ -27,6 +27,7 @@ public class ContentSearchSyncEventListener {
             contentRepository.findByIdAndDeletedAtIsNull(event.contentId())
                     .ifPresent(contentSearchIndexer::index);
         } catch (Exception e) {
+            // TODO Kafka 기반 재처리 구조 도입 후 Elasticsearch 동기화 실패 복구 처리
             log.error("Elasticsearch 콘텐츠 동기화 실패. contentId={}", event.contentId(), e);
         }
     }

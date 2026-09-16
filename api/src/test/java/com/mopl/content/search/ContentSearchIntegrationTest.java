@@ -61,8 +61,6 @@ public class ContentSearchIntegrationTest {
     private ContentSearchIndexer contentSearchIndexer;
 
     @Autowired
-    private ContentSearchService contentSSearchService;
-    @Autowired
     private ContentSearchService contentSearchService;
 
     @DynamicPropertySource

@@ -24,6 +24,7 @@ public class ContentSearchIndexer {
     private final ContentSearchRepository contentSearchRepository;
 
     public long reindexAll() {
+        // TODO 운영 환경 재색인 시 신규 인덱스 생성 후 alias swap 방식으로 전환
         contentSearchRepository.deleteAll();
 
         int pageNumber = 0;
