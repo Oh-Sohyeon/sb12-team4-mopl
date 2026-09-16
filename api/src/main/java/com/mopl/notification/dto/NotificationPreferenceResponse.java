@@ -4,7 +4,7 @@ import com.mopl.core.domain.notification.entity.NotificationPreference;
 
 public record NotificationPreferenceResponse(
     String type,
-    boolean enabled
+    Boolean enabled
 ) {
   public static NotificationPreferenceResponse from(NotificationPreference preference) {
     return new NotificationPreferenceResponse(

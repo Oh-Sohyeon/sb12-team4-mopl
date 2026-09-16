@@ -3,11 +3,14 @@ package com.mopl.notification.service;
 import com.mopl.common.exception.notification.NotificationNotFoundException;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.core.common.enums.NotificationLevel;
+import com.mopl.core.common.enums.NotificationType;
 import com.mopl.core.domain.notification.entity.Notification;
+import com.mopl.core.domain.notification.entity.NotificationPreference;
 import com.mopl.core.domain.user.entity.User;
-import com.mopl.notification.dto.NotificationResponse;
-import com.mopl.notification.repository.NotificationRepository;
 import com.mopl.user.repository.UserRepository;
+import com.mopl.notification.dto.NotificationResponse;
+import com.mopl.notification.repository.NotificationPreferenceRepository;
+import com.mopl.notification.repository.NotificationRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -28,6 +31,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
@@ -37,6 +41,9 @@ class NotificationServiceTest {
 
   @Mock
   private UserRepository userRepository;
+
+  @Mock
+  private NotificationPreferenceRepository preferenceRepository;
 
   @InjectMocks
   private NotificationService notificationService;
@@ -179,7 +186,7 @@ class NotificationServiceTest {
       notificationService.readNotification(userId, notificationId);
 
       // then
-      then(notification).should(org.mockito.Mockito.never()).markAsRead();
+      then(notification).should(never()).markAsRead();
     }
 
     @Test
@@ -225,18 +232,39 @@ class NotificationServiceTest {
   class CreateNotification {
 
     @Test
-    @DisplayName("성공 - 알림이 정상적으로 생성되어 저장된다")
+    @DisplayName("성공 - 알림 설정이 켜져 있으면 알림이 생성되어 저장된다")
     void 알림_생성_성공() {
       // given
       User receiver = mock(User.class);
+      given(preferenceRepository.findByUserAndType(receiver, NotificationType.FOLLOW))
+          .willReturn(Optional.empty());
 
       // when
       notificationService.createNotification(
-          receiver, "팔로우 알림", "OO님이 팔로우했습니다.", NotificationLevel.INFO
+          receiver, "팔로우 알림", "OO님이 팔로우했습니다.", NotificationLevel.INFO, NotificationType.FOLLOW
       );
 
       // then
       then(notificationRepository).should().save(any());
+    }
+
+    @Test
+    @DisplayName("성공 - 알림 설정이 꺼져 있으면 알림이 생성되지 않는다")
+    void 알림_생성_스킵_설정_꺼짐() {
+      // given
+      User receiver = mock(User.class);
+      NotificationPreference preference = mock(NotificationPreference.class);
+      given(preference.isEnabled()).willReturn(false);
+      given(preferenceRepository.findByUserAndType(receiver, NotificationType.FOLLOW))
+          .willReturn(Optional.of(preference));
+
+      // when
+      notificationService.createNotification(
+          receiver, "팔로우 알림", "OO님이 팔로우했습니다.", NotificationLevel.INFO, NotificationType.FOLLOW
+      );
+
+      // then
+      then(notificationRepository).should(never()).save(any());
     }
   }
 }

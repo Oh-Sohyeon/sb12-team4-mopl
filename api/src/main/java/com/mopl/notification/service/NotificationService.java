@@ -1,6 +1,9 @@
 package com.mopl.notification.service;
 
 import com.mopl.common.exception.notification.NotificationNotFoundException;
+import com.mopl.core.common.enums.NotificationType;
+import com.mopl.core.domain.notification.entity.NotificationPreference;
+import com.mopl.notification.repository.NotificationPreferenceRepository;
 import com.mopl.user.repository.UserRepository;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.core.common.enums.NotificationLevel;
@@ -14,6 +17,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -23,6 +27,7 @@ public class NotificationService {
 
   private final NotificationRepository notificationRepository;
   private final UserRepository userRepository;
+  private final NotificationPreferenceRepository preferenceRepository;
 
   public CursorResponse<NotificationResponse> getNotifications(
       UUID userId, LocalDateTime cursor, UUID idAfter, int limit, String sortBy, String sortDirection
@@ -64,8 +69,16 @@ public class NotificationService {
     notification.markAsRead();
   }
 
-  @Transactional
-  public void createNotification(User receiver, String title, String content, NotificationLevel level) {
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void createNotification(User receiver, String title, String content, NotificationLevel level, NotificationType type) {
+    boolean enabled = preferenceRepository.findByUserAndType(receiver, type)
+        .map(NotificationPreference::isEnabled)
+        .orElse(true);
+
+    if (!enabled) {
+      return;
+    }
+
     Notification notification = new Notification(receiver, title, content, level);
     notificationRepository.save(notification);
   }
