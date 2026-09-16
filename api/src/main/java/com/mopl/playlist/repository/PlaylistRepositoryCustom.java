@@ -14,6 +14,11 @@ public interface PlaylistRepositoryCustom {
 		UUID idAfter,
 		int limitPlusOne,
 		PlaylistSortBy sortBy,
-		SortDirection sortDirection
+		SortDirection sortDirection,
+		UUID subscriberIdEqual,
+		UUID ownerIdEqual,
+		String keywordLike
 	);
+
+	long countAllMatching(UUID subscriberIdEqual, UUID ownerIdEqual, String keywordLike);
 }
