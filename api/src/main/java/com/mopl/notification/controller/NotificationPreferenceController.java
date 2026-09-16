@@ -4,6 +4,7 @@ import com.mopl.core.common.enums.NotificationType;
 import com.mopl.notification.dto.NotificationPreferenceResponse;
 import com.mopl.notification.dto.NotificationPreferenceUpdateRequest;
 import com.mopl.notification.service.NotificationPreferenceService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,7 +30,7 @@ public class NotificationPreferenceController {
   public ResponseEntity<Void> updatePreference(
       @RequestParam UUID userId,
       @PathVariable NotificationType type,
-      @RequestBody NotificationPreferenceUpdateRequest request
+      @Valid @RequestBody NotificationPreferenceUpdateRequest request
   ) {
     preferenceService.updatePreference(userId, type, request.enabled());
     return ResponseEntity.noContent().build();
