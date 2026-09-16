@@ -1,9 +1,11 @@
 package com.mopl.auth.config;
 
 import com.mopl.auth.filter.JwtAuthenticationFilter;
+import com.mopl.auth.jwt.JwtProperties;
 import com.mopl.auth.jwt.JwtTokenProvider;
 import com.mopl.auth.redis.TokenRedisService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -19,6 +21,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity // @PreAuthorize("hasRole('ADMIN')") 등 사용을 위해 필요
+@EnableConfigurationProperties(JwtProperties.class) // JwtProperties 를 빈으로 등록
 @RequiredArgsConstructor
 public class SecurityConfig {
 
