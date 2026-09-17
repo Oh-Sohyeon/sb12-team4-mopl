@@ -30,3 +30,8 @@ ai:
     api-key: ${OPENAI_API_KEY:}
     llm-model: gpt-5.6-luna
     embedding-model: text-embedding-3-small
+
+jwt:
+  secret: local-dev-secret-key-please-change-this-in-real-env-1234567890
+  access-token-expiration-seconds: 1800
+  refresh-token-expiration-seconds: 1209600
