@@ -5,6 +5,7 @@ import com.mopl.core.common.dto.CursorResponse;
 import static org.mockito.ArgumentMatchers.eq;
 import com.mopl.core.common.enums.NotificationLevel;
 import com.mopl.core.common.enums.NotificationType;
+import com.mopl.core.common.event.NotificationCreatedEvent;
 import com.mopl.core.domain.notification.entity.Notification;
 import com.mopl.core.domain.notification.entity.NotificationPreference;
 import com.mopl.core.domain.user.entity.User;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,7 +50,7 @@ class NotificationServiceTest {
   private NotificationPreferenceRepository preferenceRepository;
 
   @Mock
-  private SseEmitterManager sseEmitterManager;
+  private ApplicationEventPublisher eventPublisher;
 
   @InjectMocks
   private NotificationService notificationService;
@@ -237,22 +239,15 @@ class NotificationServiceTest {
   class CreateNotification {
 
     @Test
-    @DisplayName("성공 - 알림 설정이 켜져 있으면 알림이 생성되어 저장된다")
+    @DisplayName("성공 - 알림 설정이 켜져 있으면 알림이 생성되고 이벤트가 발행된다")
     void 알림_생성_성공() {
       // given
       User receiver = mock(User.class);
-      given(receiver.getId()).willReturn(UUID.randomUUID());
       given(preferenceRepository.findByUserAndType(receiver, NotificationType.FOLLOW))
           .willReturn(Optional.empty());
 
       Notification savedNotification = mock(Notification.class);
       given(savedNotification.getId()).willReturn(UUID.randomUUID());
-      given(savedNotification.getCreatedAt()).willReturn(LocalDateTime.now());
-      given(savedNotification.getReceiver()).willReturn(receiver);
-      given(savedNotification.getTitle()).willReturn("팔로우 알림");
-      given(savedNotification.getContent()).willReturn("OO님이 팔로우했습니다.");
-      given(savedNotification.getLevel()).willReturn(NotificationLevel.INFO);
-
       given(notificationRepository.save(any())).willReturn(savedNotification);
 
       // when
@@ -262,7 +257,7 @@ class NotificationServiceTest {
 
       // then
       then(notificationRepository).should().save(any());
-      then(sseEmitterManager).should().send(any(), eq("notifications"), any(), any());
+      then(eventPublisher).should().publishEvent(any(NotificationCreatedEvent.class));
     }
 
     @Test
