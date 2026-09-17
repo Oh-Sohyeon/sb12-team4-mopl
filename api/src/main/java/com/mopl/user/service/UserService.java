@@ -4,6 +4,7 @@ import com.mopl.auth.redis.TokenRedisService;
 import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.user.UserErrorCode;
 import com.mopl.core.common.enums.UserRole;
+import com.mopl.core.common.event.RoleChangedEvent;
 import com.mopl.core.domain.user.entity.User;
 import com.mopl.user.dto.CursorPageResponse;
 import com.mopl.user.dto.UserCreateRequest;
@@ -17,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -33,6 +35,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final TokenRedisService tokenRedisService;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ===================== 회원가입 =====================
 
@@ -62,7 +65,8 @@ public class UserService {
 
     public CursorPageResponse<UserResponse> getUsers(UserSearchCondition condition) {
         String sortField = UserSpecification.validateSortField(condition.sortBy());
-        UUID idAfter = parseUuidOrNull(condition.idAfter());
+        validatePagination(condition);
+        UUID idAfter = parseUuidOrThrow(condition.idAfter());
 
         Specification<User> spec = Specification.allOf(
                 UserSpecification.notDeleted(),
@@ -103,20 +107,41 @@ public class UserService {
 
         return new CursorPageResponse<>(
                 data, nextCursor, nextIdAfter, hasNext, totalCount,
-                sortField, condition.sortDirection().name()
+                condition.sortBy(), condition.sortDirection().name()
         );
     }
 
-    private UUID parseUuidOrNull(String value) {
-        return (value == null || value.isBlank()) ? null : UUID.fromString(value);
+    /** limit>0 검증, cursor/idAfter 는 둘 다 있거나 둘 다 없어야 함 (동점자 처리를 위해 짝으로 다녀야 함) */
+    private void validatePagination(UserSearchCondition condition) {
+        if (condition.limit() <= 0) {
+            throw new MoplException(UserErrorCode.INVALID_PAGINATION_PARAM, "limit 은 0보다 커야 합니다. limit=" + condition.limit());
+        }
+        boolean hasCursor = condition.cursor() != null && !condition.cursor().isBlank();
+        boolean hasIdAfter = condition.idAfter() != null && !condition.idAfter().isBlank();
+        if (hasCursor != hasIdAfter) {
+            throw new MoplException(UserErrorCode.INVALID_PAGINATION_PARAM, "cursor 와 idAfter 는 함께 전달되어야 합니다.");
+        }
     }
 
-    private String extractCursorValue(User user, String sortBy) {
-        return switch (sortBy) {
+    private UUID parseUuidOrThrow(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new MoplException(UserErrorCode.INVALID_PAGINATION_PARAM, "idAfter 가 올바른 UUID 형식이 아닙니다. idAfter=" + value);
+        }
+    }
+
+    private String extractCursorValue(User user, String entityField) {
+        return switch (entityField) {
             case "name" -> user.getName();
             case "email" -> user.getEmail();
             case "createdAt" -> user.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            default -> throw new IllegalStateException("unreachable: validated sortBy=" + sortBy);
+            case "locked" -> String.valueOf(user.isLocked());
+            case "role" -> user.getRole().name();
+            default -> throw new IllegalStateException("unreachable: validated entityField=" + entityField);
         };
     }
 
@@ -167,6 +192,7 @@ public class UserService {
         userRepository.updateRole(targetUserId, role);
         tokenRedisService.deleteRefreshToken(targetUserId);
         tokenRedisService.invalidateTokensIssuedBefore(targetUserId, Instant.now());
+        eventPublisher.publishEvent(new RoleChangedEvent(targetUserId, role.name()));
         return UserResponse.from(findActiveUserOrThrow(targetUserId));
     }
 

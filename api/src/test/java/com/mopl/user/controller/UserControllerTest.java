@@ -9,7 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mopl.auth.config.SecurityConfig;
+import com.mopl.auth.handler.LoginFailureHandler;
+import com.mopl.auth.handler.LoginSuccessHandler;
+import com.mopl.auth.handler.LogoutSuccessHandlerImpl;
 import com.mopl.auth.jwt.JwtTokenProvider;
+import com.mopl.auth.provider.EmailPasswordAuthenticationProvider;
 import com.mopl.auth.redis.TokenRedisService;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.user.dto.UserCreateRequest;
@@ -30,7 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * 회원가입은 Security(인증/CSRF)와 직접 관련된 엔드포인트라 addFilters=false 로 끄지 않고,
  * 실제 Security 필터체인을 태운 채로 검증한다.
  *
- * SecurityConfig 를 @Import 하면 그 생성자가 필요로 하는 JwtTokenProvider, TokenRedisService 를
+ * SecurityConfig 를 @Import 하면 그 생성자가 필요로 하는 협력자들을
  * 이 slice 컨텍스트가 못 찾으므로 @MockitoBean 으로 채워준다.
  */
 @WebMvcTest(UserController.class)
@@ -51,6 +55,18 @@ class UserControllerTest {
 
     @MockitoBean
     private TokenRedisService tokenRedisService;
+
+    @MockitoBean
+    private EmailPasswordAuthenticationProvider emailPasswordAuthenticationProvider;
+
+    @MockitoBean
+    private LoginSuccessHandler loginSuccessHandler;
+
+    @MockitoBean
+    private LoginFailureHandler loginFailureHandler;
+
+    @MockitoBean
+    private LogoutSuccessHandlerImpl logoutSuccessHandler;
 
     @Test
     @DisplayName("CSRF 토큰 없이 회원가입을 요청하면 403을 반환한다")

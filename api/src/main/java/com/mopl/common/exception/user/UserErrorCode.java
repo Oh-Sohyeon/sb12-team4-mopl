@@ -53,6 +53,11 @@ public enum UserErrorCode implements ErrorCode {
             HttpStatus.NOT_FOUND,
             "USER_009",
             "팔로우 관계를 찾을 수 없습니다."
+    ),
+    INVALID_PAGINATION_PARAM(
+            HttpStatus.BAD_REQUEST,
+            "USER_010",
+            "잘못된 페이지네이션 파라미터입니다."
     );
 
     private final HttpStatus status;

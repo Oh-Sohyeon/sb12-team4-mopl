@@ -1,24 +1,26 @@
 package com.mopl.auth.controller;
 
-import com.mopl.auth.dto.LoginRequest;
+import com.mopl.auth.dto.AuthResponse;
+import com.mopl.auth.jwt.AuthCookieWriter;
 import com.mopl.auth.jwt.AuthCookies;
-import com.mopl.auth.jwt.JwtTokenProvider;
 import com.mopl.auth.service.AuthService;
-import com.mopl.user.dto.UserResponse;
-import com.mopl.auth.util.SecurityUtil;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 경로(/api/auth/**)는 자료에 명시되지 않아 관례상 임의로 정했습니다. 실제 스펙 확정되면 맞춰주세요.
+ * 로그인(/sign-in)과 로그아웃(/sign-out)은 Swagger 스펙상
+ * "SecurityFilterChain 에서 처리" 하도록 되어 있어 이 컨트롤러가 아니라
+ * Spring Security 의 formLogin/logout 내장 필터가 처리한다.
+ * (SecurityConfig, EmailPasswordAuthenticationProvider, LoginSuccessHandler/LoginFailureHandler,
+ *  LogoutSuccessHandlerImpl 참고)
+ * 이 컨트롤러에는 필터로 처리할 수 없는 두 가지만 남는다: 토큰 재발급, CSRF 토큰 발급.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -26,57 +28,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
-    private final JwtTokenProvider jwtTokenProvider;
+    private final AuthCookieWriter cookieWriter;
 
-    @PostMapping("/login")
-    public UserResponse login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
-        AuthService.TokenPair tokenPair = authService.login(request.email(), request.password());
-        setAuthCookies(response, tokenPair.accessToken(), tokenPair.refreshToken());
-        return tokenPair.user();
+    @PostMapping("/refresh")
+    public AuthResponse refresh(
+            @CookieValue(AuthCookies.REFRESH_TOKEN) String refreshToken,
+            HttpServletResponse response
+    ) {
+        AuthService.TokenPair tokenPair = authService.refresh(refreshToken);
+        cookieWriter.setAccessTokenCookie(response, tokenPair.accessToken());
+        cookieWriter.setRefreshTokenCookie(response, tokenPair.refreshToken());
+        return new AuthResponse(tokenPair.user(), tokenPair.accessToken());
     }
 
-    @PostMapping("/logout")
-    public void logout(HttpServletResponse response) {
-        UUID userId = SecurityUtil.getCurrentUserId();
-        authService.logout(userId);
-        clearAuthCookies(response);
-    }
-
-    @PostMapping("/reissue")
-    public void reissue(@CookieValue(AuthCookies.REFRESH_TOKEN) String refreshToken, HttpServletResponse response) {
-        String newAccessToken = authService.reissueAccessToken(refreshToken);
-        setAccessTokenCookie(response, newAccessToken);
-    }
-
-    private void setAuthCookies(HttpServletResponse response, String accessToken, String refreshToken) {
-        setAccessTokenCookie(response, accessToken);
-        ResponseCookie refreshCookie = ResponseCookie.from(AuthCookies.REFRESH_TOKEN, refreshToken)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Strict")
-                .path("/api/auth")
-                .maxAge(jwtTokenProvider.getRefreshTokenExpirationSeconds())
-                .build();
-        response.addHeader("Set-Cookie", refreshCookie.toString());
-    }
-
-    private void setAccessTokenCookie(HttpServletResponse response, String accessToken) {
-        ResponseCookie accessCookie = ResponseCookie.from(AuthCookies.ACCESS_TOKEN, accessToken)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Strict")
-                .path("/")
-                .maxAge(jwtTokenProvider.getAccessTokenExpirationSeconds())
-                .build();
-        response.addHeader("Set-Cookie", accessCookie.toString());
-    }
-
-    private void clearAuthCookies(HttpServletResponse response) {
-        ResponseCookie accessCookie = ResponseCookie.from(AuthCookies.ACCESS_TOKEN, "")
-                .httpOnly(true).secure(true).sameSite("Strict").path("/").maxAge(0).build();
-        ResponseCookie refreshCookie = ResponseCookie.from(AuthCookies.REFRESH_TOKEN, "")
-                .httpOnly(true).secure(true).sameSite("Strict").path("/api/auth").maxAge(0).build();
-        response.addHeader("Set-Cookie", accessCookie.toString());
-        response.addHeader("Set-Cookie", refreshCookie.toString());
+    /**
+     * CsrfToken 을 파라미터로 받기만 해도 Spring Security 의 지연 토큰 생성(deferred loading)이
+     * 실제로 트리거되어 응답에 XSRF-TOKEN 쿠키가 실린다. 프론트가 로그인 전에 먼저 호출해서
+     * CSRF 쿠키를 받아가는 용도.
+     */
+    @GetMapping("/csrf-token")
+    public ResponseEntity<Void> csrfToken(CsrfToken csrfToken) {
+        csrfToken.getToken();
+        return ResponseEntity.noContent().build();
     }
 }
