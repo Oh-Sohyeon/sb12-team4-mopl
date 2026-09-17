@@ -37,10 +37,15 @@ public class JwtTokenProvider {
         return createToken(userId, email, role, jwtProperties.accessTokenExpirationSeconds());
     }
 
-    /** refresh token 은 claim 없이 sub(userId) 만 담아 최소한으로 구성 */
+    /**
+     * refresh token 은 claim 없이 sub(userId) 만 담아 최소한으로 구성.
+     * jti(고유 ID)를 넣는 이유: sub/iat/exp 만으로 구성하면 같은 초 안에 재발급된 두 토큰이
+     * 완전히 동일한 문자열이 될 수 있어서(rotation 검증/보안상 위험), 매번 고유하도록 보장한다.
+     */
     public String createRefreshToken(UUID userId) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(jwtProperties.refreshTokenExpirationSeconds())))
@@ -51,6 +56,7 @@ public class JwtTokenProvider {
     private String createToken(UUID userId, String email, UserRole role, long expirationSeconds) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .claim(CLAIM_EMAIL, email)
                 .claim(CLAIM_ROLE, role.name())

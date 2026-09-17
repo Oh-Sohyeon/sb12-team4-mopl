@@ -51,4 +51,8 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
     testImplementation 'org.springframework.security:spring-security-test'
+
+    test {
+        environment "JWT_SECRET", "test-only-secret-key-never-use-in-production-1234567890"
+    }
 }
