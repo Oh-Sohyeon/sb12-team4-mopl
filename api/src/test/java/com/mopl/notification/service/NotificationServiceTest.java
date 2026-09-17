@@ -2,11 +2,13 @@ package com.mopl.notification.service;
 
 import com.mopl.common.exception.notification.NotificationNotFoundException;
 import com.mopl.core.common.dto.CursorResponse;
+import static org.mockito.ArgumentMatchers.eq;
 import com.mopl.core.common.enums.NotificationLevel;
 import com.mopl.core.common.enums.NotificationType;
 import com.mopl.core.domain.notification.entity.Notification;
 import com.mopl.core.domain.notification.entity.NotificationPreference;
 import com.mopl.core.domain.user.entity.User;
+import com.mopl.notification.sse.SseEmitterManager;
 import com.mopl.user.repository.UserRepository;
 import com.mopl.notification.dto.NotificationResponse;
 import com.mopl.notification.repository.NotificationPreferenceRepository;
@@ -44,6 +46,9 @@ class NotificationServiceTest {
 
   @Mock
   private NotificationPreferenceRepository preferenceRepository;
+
+  @Mock
+  private SseEmitterManager sseEmitterManager;
 
   @InjectMocks
   private NotificationService notificationService;
@@ -236,8 +241,19 @@ class NotificationServiceTest {
     void 알림_생성_성공() {
       // given
       User receiver = mock(User.class);
+      given(receiver.getId()).willReturn(UUID.randomUUID());
       given(preferenceRepository.findByUserAndType(receiver, NotificationType.FOLLOW))
           .willReturn(Optional.empty());
+
+      Notification savedNotification = mock(Notification.class);
+      given(savedNotification.getId()).willReturn(UUID.randomUUID());
+      given(savedNotification.getCreatedAt()).willReturn(LocalDateTime.now());
+      given(savedNotification.getReceiver()).willReturn(receiver);
+      given(savedNotification.getTitle()).willReturn("팔로우 알림");
+      given(savedNotification.getContent()).willReturn("OO님이 팔로우했습니다.");
+      given(savedNotification.getLevel()).willReturn(NotificationLevel.INFO);
+
+      given(notificationRepository.save(any())).willReturn(savedNotification);
 
       // when
       notificationService.createNotification(
@@ -246,6 +262,7 @@ class NotificationServiceTest {
 
       // then
       then(notificationRepository).should().save(any());
+      then(sseEmitterManager).should().send(any(), eq("notifications"), any(), any());
     }
 
     @Test

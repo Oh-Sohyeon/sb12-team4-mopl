@@ -4,6 +4,7 @@ import com.mopl.common.exception.notification.NotificationNotFoundException;
 import com.mopl.core.common.enums.NotificationType;
 import com.mopl.core.domain.notification.entity.NotificationPreference;
 import com.mopl.notification.repository.NotificationPreferenceRepository;
+import com.mopl.notification.sse.SseEmitterManager;
 import com.mopl.user.repository.UserRepository;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.core.common.enums.NotificationLevel;
@@ -28,6 +29,7 @@ public class NotificationService {
   private final NotificationRepository notificationRepository;
   private final UserRepository userRepository;
   private final NotificationPreferenceRepository preferenceRepository;
+  private final SseEmitterManager sseEmitterManager;
 
   public CursorResponse<NotificationResponse> getNotifications(
       UUID userId, LocalDateTime cursor, UUID idAfter, int limit, String sortBy, String sortDirection
@@ -74,12 +76,14 @@ public class NotificationService {
     boolean enabled = preferenceRepository.findByUserAndType(receiver, type)
         .map(NotificationPreference::isEnabled)
         .orElse(true);
-
     if (!enabled) {
       return;
     }
 
     Notification notification = new Notification(receiver, title, content, level);
-    notificationRepository.save(notification);
+    Notification saved = notificationRepository.save(notification);
+
+    NotificationResponse response = NotificationResponse.from(saved);
+    sseEmitterManager.send(receiver.getId(), "notifications", response, saved.getId().toString());
   }
 }
