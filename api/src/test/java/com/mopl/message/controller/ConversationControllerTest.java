@@ -1,6 +1,7 @@
 package com.mopl.message.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mopl.auth.util.SecurityUtil;
 import com.mopl.common.exception.message.ConversationAccessDeniedException;
 import com.mopl.common.exception.message.ConversationNotFoundException;
 import com.mopl.common.exception.message.ConversationSelfNotAllowedException;
@@ -13,9 +14,12 @@ import com.mopl.message.dto.*;
 import com.mopl.message.service.ConversationService;
 import com.mopl.message.service.DirectMessageService;
 import com.mopl.user.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // Security(JWT) 도입으로 인한 필터체인 영향을 받지 않도록 처리.
 // 이 테스트는 인증/인가 자체가 아니라 Conversation 컨트롤러 로직을 검증하는 것이 목적이므로 필터를 끈다.
+// 요청자 식별은 SecurityUtil.getCurrentUserId()를 통해 이루어지므로, 정적 메서드를 목킹해서 검증한다.
 @WebMvcTest(ConversationController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class ConversationControllerTest {
@@ -61,6 +66,8 @@ class ConversationControllerTest {
 	private UUID directMessageId;
 	private ConversationResponse sampleConversationResponse;
 
+	private MockedStatic<SecurityUtil> securityUtilMock;
+
 	{
 		requesterId = UUID.randomUUID();
 		targetUserId = UUID.randomUUID();
@@ -71,6 +78,17 @@ class ConversationControllerTest {
 		sampleConversationResponse = new ConversationResponse(
 			conversationId, partner, null, false
 		);
+	}
+
+	@BeforeEach
+	void setUpSecurityUtil() {
+		securityUtilMock = mockStatic(SecurityUtil.class);
+		securityUtilMock.when(SecurityUtil::getCurrentUserId).thenReturn(requesterId);
+	}
+
+	@AfterEach
+	void tearDownSecurityUtil() {
+		securityUtilMock.close();
 	}
 
 	@Nested
@@ -101,7 +119,6 @@ class ConversationControllerTest {
 			ConversationCreateRequest request = new ConversationCreateRequest(targetUserId);
 
 			mockMvc.perform(post("/conversations")
-					.param("requesterId", requesterId.toString())
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isOk())
@@ -117,7 +134,6 @@ class ConversationControllerTest {
 			ConversationCreateRequest request = new ConversationCreateRequest(targetUserId);
 
 			mockMvc.perform(post("/conversations")
-					.param("requesterId", requesterId.toString())
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isNotFound())
@@ -136,7 +152,6 @@ class ConversationControllerTest {
 			ConversationCreateRequest request = new ConversationCreateRequest(targetUserId);
 
 			mockMvc.perform(post("/conversations")
-					.param("requesterId", requesterId.toString())
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isNotFound())
@@ -156,7 +171,6 @@ class ConversationControllerTest {
 			ConversationCreateRequest request = new ConversationCreateRequest(requesterId);
 
 			mockMvc.perform(post("/conversations")
-					.param("requesterId", requesterId.toString())
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(objectMapper.writeValueAsString(request)))
 				.andExpect(status().isBadRequest());
@@ -173,8 +187,7 @@ class ConversationControllerTest {
 			when(conversationService.getConversation(eq(conversationId), eq(requesterId)))
 				.thenReturn(sampleConversationResponse);
 
-			mockMvc.perform(get("/conversations/{conversationId}", conversationId)
-					.param("requesterId", requesterId.toString()))
+			mockMvc.perform(get("/conversations/{conversationId}", conversationId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(conversationId.toString()));
 		}
@@ -185,8 +198,7 @@ class ConversationControllerTest {
 			when(conversationService.getConversation(eq(conversationId), eq(requesterId)))
 				.thenThrow(new ConversationNotFoundException());
 
-			mockMvc.perform(get("/conversations/{conversationId}", conversationId)
-					.param("requesterId", requesterId.toString()))
+			mockMvc.perform(get("/conversations/{conversationId}", conversationId))
 				.andExpect(status().isNotFound());
 		}
 
@@ -196,8 +208,7 @@ class ConversationControllerTest {
 			when(conversationService.getConversation(eq(conversationId), eq(requesterId)))
 				.thenThrow(new ConversationAccessDeniedException());
 
-			mockMvc.perform(get("/conversations/{conversationId}", conversationId)
-					.param("requesterId", requesterId.toString()))
+			mockMvc.perform(get("/conversations/{conversationId}", conversationId))
 				.andExpect(status().isForbidden());
 		}
 	}
@@ -213,7 +224,6 @@ class ConversationControllerTest {
 				.thenReturn(sampleConversationResponse);
 
 			mockMvc.perform(get("/conversations/with")
-					.param("requesterId", requesterId.toString())
 					.param("userId", targetUserId.toString()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.id").value(conversationId.toString()));
@@ -226,7 +236,6 @@ class ConversationControllerTest {
 				.thenThrow(new ConversationNotFoundException());
 
 			mockMvc.perform(get("/conversations/with")
-					.param("requesterId", requesterId.toString())
 					.param("userId", targetUserId.toString()))
 				.andExpect(status().isNotFound());
 		}
@@ -250,7 +259,6 @@ class ConversationControllerTest {
 			)).thenReturn(response);
 
 			mockMvc.perform(get("/conversations")
-					.param("requesterId", requesterId.toString())
 					.param("limit", "20")
 					.param("sortBy", "createdAt")
 					.param("sortDirection", "DESCENDING"))
@@ -274,7 +282,6 @@ class ConversationControllerTest {
 			)).thenReturn(response);
 
 			mockMvc.perform(get("/conversations")
-					.param("requesterId", requesterId.toString())
 					.param("keywordLike", keywordLike)
 					.param("limit", "20")
 					.param("sortBy", "createdAt")
@@ -307,7 +314,6 @@ class ConversationControllerTest {
 			)).thenReturn(response);
 
 			mockMvc.perform(get("/conversations/{conversationId}/direct-messages", conversationId)
-					.param("requesterId", requesterId.toString())
 					.param("limit", "20")
 					.param("sortBy", "createdAt")
 					.param("sortDirection", "DESCENDING"))
@@ -325,7 +331,6 @@ class ConversationControllerTest {
 			)).thenThrow(new ConversationAccessDeniedException());
 
 			mockMvc.perform(get("/conversations/{conversationId}/direct-messages", conversationId)
-					.param("requesterId", requesterId.toString())
 					.param("limit", "20")
 					.param("sortBy", "createdAt")
 					.param("sortDirection", "DESCENDING"))
@@ -343,8 +348,7 @@ class ConversationControllerTest {
 			doNothing().when(directMessageService).markAsRead(conversationId, directMessageId, requesterId);
 
 			mockMvc.perform(post("/conversations/{conversationId}/direct-messages/{directMessageId}/read",
-					conversationId, directMessageId)
-					.param("requesterId", requesterId.toString()))
+					conversationId, directMessageId))
 				.andExpect(status().isOk());
 		}
 
@@ -355,8 +359,7 @@ class ConversationControllerTest {
 				.when(directMessageService).markAsRead(conversationId, directMessageId, requesterId);
 
 			mockMvc.perform(post("/conversations/{conversationId}/direct-messages/{directMessageId}/read",
-					conversationId, directMessageId)
-					.param("requesterId", requesterId.toString()))
+					conversationId, directMessageId))
 				.andExpect(status().isForbidden());
 		}
 
@@ -367,8 +370,7 @@ class ConversationControllerTest {
 				.when(directMessageService).markAsRead(conversationId, directMessageId, requesterId);
 
 			mockMvc.perform(post("/conversations/{conversationId}/direct-messages/{directMessageId}/read",
-					conversationId, directMessageId)
-					.param("requesterId", requesterId.toString()))
+					conversationId, directMessageId))
 				.andExpect(status().isNotFound());
 		}
 	}

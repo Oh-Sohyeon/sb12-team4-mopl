@@ -1,5 +1,6 @@
 package com.mopl.message.controller;
 
+import com.mopl.auth.util.SecurityUtil;
 import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.user.UserErrorCode;
 import com.mopl.core.domain.message.entity.Conversation;
@@ -15,12 +16,11 @@ import com.mopl.message.service.ConversationService;
 import com.mopl.message.service.DirectMessageService;
 import com.mopl.user.repository.UserRepository;
 
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
-
-import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/conversations")
@@ -42,9 +42,10 @@ public class ConversationController {
 
 	@PostMapping
 	public ResponseEntity<ConversationResponse> createConversation(
-		@RequestParam UUID requesterId, // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
 		@Valid @RequestBody ConversationCreateRequest request
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		User requester = userRepository.findById(requesterId)
 			.orElseThrow(() -> new MoplException(UserErrorCode.USER_NOT_FOUND));
 		User target = userRepository.findById(request.withUserId())
@@ -58,7 +59,6 @@ public class ConversationController {
 
 	@GetMapping
 	public ResponseEntity<CursorResponse<ConversationResponse>> getConversations(
-		@RequestParam UUID requesterId, // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
 		@RequestParam(required = false) String keywordLike,
 		@RequestParam(required = false) String cursor,
 		@RequestParam(required = false) UUID idAfter,
@@ -66,6 +66,8 @@ public class ConversationController {
 		@RequestParam String sortDirection,
 		@RequestParam String sortBy
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		CursorResponse<ConversationResponse> response = conversationService.getConversations(
 			requesterId,
 			keywordLike,
@@ -81,9 +83,10 @@ public class ConversationController {
 
 	@GetMapping("/{conversationId}")
 	public ResponseEntity<ConversationResponse> getConversation(
-		@PathVariable UUID conversationId,
-		@RequestParam UUID requesterId // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
+		@PathVariable UUID conversationId
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		ConversationResponse response = conversationService.getConversation(conversationId, requesterId);
 
 		return ResponseEntity.ok(response);
@@ -91,9 +94,10 @@ public class ConversationController {
 
 	@GetMapping("/with")
 	public ResponseEntity<ConversationResponse> getConversationWith(
-		@RequestParam UUID requesterId, // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
 		@RequestParam UUID userId
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		ConversationResponse response = conversationService.getConversationWith(requesterId, userId);
 
 		return ResponseEntity.ok(response);
@@ -102,13 +106,14 @@ public class ConversationController {
 	@GetMapping("/{conversationId}/direct-messages")
 	public ResponseEntity<CursorResponse<DirectMessageResponse>> getDirectMessages(
 		@PathVariable UUID conversationId,
-		@RequestParam UUID requesterId, // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
 		@RequestParam(required = false) String cursor,
 		@RequestParam(required = false) UUID idAfter,
 		@RequestParam int limit,
 		@RequestParam String sortDirection,
 		@RequestParam String sortBy
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		CursorResponse<DirectMessageResponse> response = directMessageService.getDirectMessages(
 			conversationId,
 			requesterId,
@@ -125,9 +130,10 @@ public class ConversationController {
 	@PostMapping("/{conversationId}/direct-messages/{directMessageId}/read")
 	public ResponseEntity<Void> markAsRead(
 		@PathVariable UUID conversationId,
-		@PathVariable UUID directMessageId,
-		@RequestParam UUID requesterId // TODO: Security 완료 후 @AuthenticationPrincipal로 교체
+		@PathVariable UUID directMessageId
 	) {
+		UUID requesterId = SecurityUtil.getCurrentUserId();
+
 		directMessageService.markAsRead(conversationId, directMessageId, requesterId);
 
 		return ResponseEntity.ok().build();
