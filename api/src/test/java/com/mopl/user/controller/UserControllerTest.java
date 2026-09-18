@@ -15,6 +15,7 @@ import com.mopl.auth.handler.LogoutSuccessHandlerImpl;
 import com.mopl.auth.jwt.JwtTokenProvider;
 import com.mopl.auth.provider.EmailPasswordAuthenticationProvider;
 import com.mopl.auth.redis.TokenRedisService;
+import com.mopl.common.storage.ImageUploader;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.user.dto.UserCreateRequest;
 import com.mopl.user.dto.UserResponse;
@@ -49,6 +50,9 @@ class UserControllerTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private ImageUploader imageUploader;
 
     @MockitoBean
     private JwtTokenProvider jwtTokenProvider;

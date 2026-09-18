@@ -1,5 +1,6 @@
 package com.mopl.user.controller;
 
+import com.mopl.common.storage.ImageUploader;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.user.dto.CursorPageResponse;
 import com.mopl.user.dto.UserCreateRequest;
@@ -34,6 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class UserController {
 
     private final UserService userService;
+    private final ImageUploader imageUploader;
 
     /** 회원가입. SecurityConfig 에서 permitAll 처리됨. */
     @PostMapping
@@ -66,15 +68,14 @@ public class UserController {
         return userService.getUsers(condition);
     }
 
-    /** 본인 프로필 변경 (이름 / 이미지) */
+    /** 본인 프로필 변경 (이름 / 이미지). image 를 안 보내거나 S3 미연동 상태면 기존 이미지 URL 유지. */
     @PatchMapping(value = "/{userId}", consumes = "multipart/form-data")
     public UserResponse updateProfile(
             @PathVariable UUID userId,
             @RequestPart UserProfileUpdateRequest request,
             @RequestPart(required = false) MultipartFile image
     ) {
-        // TODO: image 가 존재하면 S3 업로드 후 URL 을 profileImageUrl 로 전달
-        String profileImageUrl = null;
+        String profileImageUrl = (image != null && !image.isEmpty()) ? imageUploader.upload(image) : null;
         UUID requesterId = SecurityUtil.getCurrentUserId();
         return userService.updateProfile(requesterId, userId, request.name(), profileImageUrl);
     }
