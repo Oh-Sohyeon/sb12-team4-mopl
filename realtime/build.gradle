@@ -22,4 +22,11 @@ dependencies {
     implementation 'org.springframework.kafka:spring-kafka'
 
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
 }
