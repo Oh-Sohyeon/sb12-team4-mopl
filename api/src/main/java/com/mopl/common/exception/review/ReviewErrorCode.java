@@ -19,6 +19,12 @@ public enum ReviewErrorCode implements ErrorCode {
             HttpStatus.CONFLICT,
             "REVIEW_002",
             "이미 해당 콘텐츠에 리뷰를 작성했습니다."
+    ),
+
+    REVIEW_ACCESS_DENIED(
+            HttpStatus.FORBIDDEN,
+            "REVIEW_003",
+            "리뷰를 수정하거나 삭제할 권한이 없습니다."
     );
 
     private final HttpStatus status;

@@ -12,7 +12,7 @@ public record ReviewUpdateRequest(
         BigDecimal rating,
 
         @Pattern(
-                regexp = "(?).*\\S.*",
+                regexp = "(?s).*\\S.*",
                 message = "리뷰 내용은 공백일 수 없습니다."
         )
         @Size(max = 1000, message = "리뷰 내용은 1000자를 초과할 수 없습니다")
