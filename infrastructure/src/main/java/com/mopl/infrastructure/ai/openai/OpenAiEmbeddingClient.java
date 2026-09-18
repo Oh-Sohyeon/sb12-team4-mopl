@@ -2,9 +2,9 @@ package com.mopl.infrastructure.ai.openai;
 
 import java.util.List;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.mopl.infrastructure.ai.client.EmbeddingClient;
@@ -16,24 +16,15 @@ import com.mopl.infrastructure.ai.openai.dto.OpenAiEmbeddingRequest;
 import com.mopl.infrastructure.ai.openai.dto.OpenAiEmbeddingResponse;
 
 @Component
+@RequiredArgsConstructor
 public class OpenAiEmbeddingClient implements EmbeddingClient {
 
-    private final RestClient openAiRestClient;
+    private final OpenAiRestClientFactory restClientFactory;
     private final AiProperties aiProperties;
-
-    public OpenAiEmbeddingClient(
-            RestClient.Builder restClientBuilder,
-            AiProperties aiProperties
-    ) {
-        this.openAiRestClient = restClientBuilder
-                .baseUrl(aiProperties.baseUrl())
-                .build();
-        this.aiProperties = aiProperties;
-    }
 
     @Override
     public EmbeddingResponse embed(EmbeddingRequest request) {
-        validateApiKey();
+        OpenAiClientValidator.validateApiKey(aiProperties.apiKey());
 
         OpenAiEmbeddingRequest openAiRequest =
                 new OpenAiEmbeddingRequest(
@@ -42,7 +33,7 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
                 );
 
         try {
-            OpenAiEmbeddingResponse response = openAiRestClient
+            OpenAiEmbeddingResponse response = restClientFactory.create()
                     .post()
                     .uri("/embeddings")
                     .header(
@@ -79,14 +70,5 @@ public class OpenAiEmbeddingClient implements EmbeddingClient {
         return response.data()
                 .get(0)
                 .embedding();
-    }
-
-    private void validateApiKey() {
-        if (aiProperties.apiKey() == null
-                || aiProperties.apiKey().isBlank()) {
-            throw new AiClientException(
-                    "OpenAI API Key가 설정되지 않았습니다."
-            );
-        }
     }
 }

@@ -3,6 +3,8 @@ package com.mopl.infrastructure.ai.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+import java.time.Duration;
+
 @ConfigurationProperties(prefix = "ai.openai")
 public record AiProperties(
         @DefaultValue("https://api.openai.com/v1")
@@ -14,6 +16,12 @@ public record AiProperties(
         String llmModel,
 
         @DefaultValue("text-embedding-3-small")
-        String embeddingModel
+        String embeddingModel,
+
+        @DefaultValue("5s")
+        Duration connectTimeout,
+
+        @DefaultValue("30s")
+        Duration readTimeout
 ) {
 }

@@ -18,6 +18,11 @@ import com.mopl.infrastructure.ai.config.AiProperties;
 import com.mopl.infrastructure.ai.dto.EmbeddingRequest;
 import com.mopl.infrastructure.ai.dto.EmbeddingResponse;
 import com.mopl.infrastructure.ai.exception.AiClientException;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+
+import java.time.Duration;
 
 class OpenAiEmbeddingClientTest {
 
@@ -26,7 +31,8 @@ class OpenAiEmbeddingClientTest {
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl("https://api.openai.com/v1");
 
         mockServer = MockRestServiceServer
                 .bindTo(builder)
@@ -36,10 +42,18 @@ class OpenAiEmbeddingClientTest {
                 "https://api.openai.com/v1",
                 "test-api-key",
                 "gpt-5.6-luna",
-                "text-embedding-3-small"
+                "text-embedding-3-small",
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(30)
         );
 
-        openAiEmbeddingClient = new OpenAiEmbeddingClient(builder, aiProperties);
+        RestClient restClient = builder.build();
+
+        OpenAiRestClientFactory restClientFactory = mock(OpenAiRestClientFactory.class);
+
+        when(restClientFactory.create()).thenReturn(restClient);
+
+        openAiEmbeddingClient = new OpenAiEmbeddingClient(restClientFactory, aiProperties);
     }
 
     @Test
@@ -75,16 +89,22 @@ class OpenAiEmbeddingClientTest {
 
     @Test
     void embedThrowsExceptionWhenApiKeyIsMissing() {
-        RestClient restClient = RestClient.create("https://api.openai.com/v1");
-
         AiProperties aiProperties = new AiProperties(
                 "https://api.openai.com/v1",
                 "",
                 "gpt-5.6-luna",
-                "text-embedding-3-small"
+                "text-embedding-3-small",
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(30)
         );
 
-        OpenAiEmbeddingClient client = new OpenAiEmbeddingClient(RestClient.builder(), aiProperties);
+        OpenAiRestClientFactory restClientFactory = mock(OpenAiRestClientFactory.class);
+
+        OpenAiEmbeddingClient client =
+                new OpenAiEmbeddingClient(
+                        restClientFactory,
+                        aiProperties
+                );
 
         EmbeddingRequest request = new EmbeddingRequest("인터스텔라");
 

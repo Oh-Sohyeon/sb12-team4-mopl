@@ -2,9 +2,9 @@ package com.mopl.infrastructure.ai.openai;
 
 import java.util.Objects;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import com.mopl.infrastructure.ai.client.LlmClient;
@@ -16,26 +16,17 @@ import com.mopl.infrastructure.ai.openai.dto.OpenAiLlmRequest;
 import com.mopl.infrastructure.ai.openai.dto.OpenAiLlmResponse;
 
 @Component
+@RequiredArgsConstructor
 public class OpenAiLlmClient implements LlmClient {
 
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 1000;
 
-    private final RestClient openAiRestClient;
+    private final OpenAiRestClientFactory restClientFactory;
     private final AiProperties aiProperties;
-
-    public OpenAiLlmClient(
-            RestClient.Builder restClientBuilder,
-            AiProperties aiProperties
-    ) {
-        this.openAiRestClient = restClientBuilder
-                .baseUrl(aiProperties.baseUrl())
-                .build();
-        this.aiProperties = aiProperties;
-    }
 
     @Override
     public LlmResponse generate(LlmRequest request) {
-        validateApiKey();
+        OpenAiClientValidator.validateApiKey(aiProperties.apiKey());
 
         OpenAiLlmRequest openAiRequest = new OpenAiLlmRequest(
                 aiProperties.llmModel(),
@@ -45,7 +36,7 @@ public class OpenAiLlmClient implements LlmClient {
         );
 
         try {
-            OpenAiLlmResponse response = openAiRestClient
+            OpenAiLlmResponse response = restClientFactory.create()
                     .post()
                     .uri("/responses")
                     .header(
@@ -85,14 +76,5 @@ public class OpenAiLlmClient implements LlmClient {
                                 "OpenAI LLM 응답에서 텍스트를 찾을 수 없습니다."
                         )
                 );
-    }
-
-    private void validateApiKey() {
-        if (aiProperties.apiKey() == null
-                || aiProperties.apiKey().isBlank()) {
-            throw new AiClientException(
-                    "OpenAI API Key가 설정되지 않았습니다."
-            );
-        }
     }
 }

@@ -18,6 +18,10 @@ import com.mopl.infrastructure.ai.config.AiProperties;
 import com.mopl.infrastructure.ai.dto.LlmRequest;
 import com.mopl.infrastructure.ai.dto.LlmResponse;
 import com.mopl.infrastructure.ai.exception.AiClientException;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.time.Duration;
 
 class OpenAiLlmClientTest {
 
@@ -26,7 +30,8 @@ class OpenAiLlmClientTest {
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl("https://api.openai.com/v1");
 
         mockServer = MockRestServiceServer
                 .bindTo(builder)
@@ -36,10 +41,18 @@ class OpenAiLlmClientTest {
                 "https://api.openai.com/v1",
                 "test-api-key",
                 "gpt-5.6-luna",
-                "text-embedding-3-small"
+                "text-embedding-3-small",
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(30)
         );
 
-        openAiLlmClient = new OpenAiLlmClient(builder, aiProperties);
+        RestClient restClient = builder.build();
+
+        OpenAiRestClientFactory restClientFactory = mock(OpenAiRestClientFactory.class);
+
+        when(restClientFactory.create()).thenReturn(restClient);
+
+        openAiLlmClient = new OpenAiLlmClient(restClientFactory, aiProperties);
     }
 
     @Test
@@ -88,16 +101,21 @@ class OpenAiLlmClientTest {
 
     @Test
     void generateThrowsExceptionWhenApiKeyIsMissing() {
-        RestClient restClient = RestClient.create("https://api.openai.com/v1");
-
         AiProperties aiProperties = new AiProperties(
                 "https://api.openai.com/v1",
                 "",
                 "gpt-5.6-luna",
-                "text-embedding-3-small"
+                "text-embedding-3-small",
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(30)
         );
 
-        OpenAiLlmClient client = new OpenAiLlmClient(RestClient.builder(), aiProperties);
+        OpenAiRestClientFactory restClientFactory = mock(OpenAiRestClientFactory.class);
+
+        OpenAiLlmClient client = new OpenAiLlmClient(
+                restClientFactory,
+                aiProperties
+        );
 
         LlmRequest request = new LlmRequest(
                 "system",
