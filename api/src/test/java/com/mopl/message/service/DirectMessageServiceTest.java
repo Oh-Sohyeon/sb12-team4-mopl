@@ -1,5 +1,7 @@
 package com.mopl.message.service;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.message.ConversationAccessDeniedException;
 import com.mopl.common.exception.message.ConversationNotFoundException;
 import com.mopl.common.exception.message.DirectMessageNotFoundException;
@@ -155,6 +157,120 @@ class DirectMessageServiceTest {
 			assertThat(response.hasNext()).isFalse();
 			assertThat(response.nextCursor()).isNull();
 			assertThat(response.nextIdAfter()).isNull();
+		}
+
+		@Test
+		@DisplayName("limit이 0 이하이면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void invalidLimit_throws() {
+			assertThatThrownBy(() -> directMessageService.getDirectMessages(
+				conversationId,
+				requesterId,
+				null,
+				null,
+				0,
+				SortDirection.DESCENDING,
+				DirectMessageSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			assertThatThrownBy(() -> directMessageService.getDirectMessages(
+				conversationId,
+				requesterId,
+				null,
+				null,
+				-1,
+				SortDirection.DESCENDING,
+				DirectMessageSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository, directMessageRepository);
+		}
+
+		@Test
+		@DisplayName("cursor만 전달하면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void cursorOnly_throws() {
+			assertThatThrownBy(() -> directMessageService.getDirectMessages(
+				conversationId,
+				requesterId,
+				"2026-09-20T05:00:00",
+				null,
+				20,
+				SortDirection.DESCENDING,
+				DirectMessageSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository, directMessageRepository);
+		}
+
+		@Test
+		@DisplayName("idAfter만 전달하면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void idAfterOnly_throws() {
+			assertThatThrownBy(() -> directMessageService.getDirectMessages(
+				conversationId,
+				requesterId,
+				null,
+				UUID.randomUUID(),
+				20,
+				SortDirection.DESCENDING,
+				DirectMessageSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository, directMessageRepository);
+		}
+
+		@Test
+		@DisplayName("limit이 최대값을 초과하면 100개 기준으로 조회한다")
+		void limitOverMax_isCappedAt100() {
+			when(conversationRepository.findById(conversationId))
+				.thenReturn(Optional.of(conversation));
+
+			when(directMessageRepository.findByConversationCursor(
+				eq(conversationId),
+				isNull(),
+				isNull(),
+				eq(101),
+				eq(SortDirection.DESCENDING)
+			)).thenReturn(List.of());
+
+			when(directMessageRepository.countByConversation(conversationId))
+				.thenReturn(0L);
+
+			directMessageService.getDirectMessages(
+				conversationId,
+				requesterId,
+				null,
+				null,
+				1000,
+				SortDirection.DESCENDING,
+				DirectMessageSortBy.CREATED_AT
+			);
+
+			verify(directMessageRepository).findByConversationCursor(
+				eq(conversationId),
+				isNull(),
+				isNull(),
+				eq(101), // safeLimit 100 + 다음 페이지 확인용 1
+				eq(SortDirection.DESCENDING)
+			);
 		}
 	}
 

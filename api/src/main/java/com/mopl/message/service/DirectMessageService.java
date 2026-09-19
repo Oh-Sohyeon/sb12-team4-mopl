@@ -1,5 +1,7 @@
 package com.mopl.message.service;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.message.ConversationAccessDeniedException;
 import com.mopl.common.exception.message.ConversationNotFoundException;
 import com.mopl.common.exception.message.DirectMessageNotFoundException;
@@ -23,6 +25,8 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class DirectMessageService {
 
+	private static final int MAX_LIMIT = 100;
+
 	private final DirectMessageRepository directMessageRepository;
 	private final ConversationRepository conversationRepository;
 
@@ -43,17 +47,28 @@ public class DirectMessageService {
 		SortDirection sortDirection,
 		DirectMessageSortBy sortBy
 	) {
+		if (limit <= 0) {
+			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
+		}
+		if ((cursor == null) != (idAfter == null)) {
+			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
+		}
+
+		int safeLimit = Math.min(limit, MAX_LIMIT);
+
 		Conversation conversation = conversationRepository.findById(conversationId)
 			.orElseThrow(ConversationNotFoundException::new);
 
 		validateParticipant(conversation, requesterId);
 
 		List<DirectMessage> rows = directMessageRepository.findByConversationCursor(
-			conversationId, cursor, idAfter, limit + 1, sortDirection
+			conversationId, cursor, idAfter, safeLimit + 1, sortDirection
 		);
 
-		boolean hasNext = rows.size() > limit;
-		List<DirectMessage> page = hasNext ? rows.subList(0, limit) : rows;
+		boolean hasNext = rows.size() > safeLimit;
+		List<DirectMessage> page = hasNext
+			? rows.subList(0, safeLimit)
+			: rows;
 
 		List<DirectMessageResponse> data = page.stream()
 			.map(DirectMessageResponse::from)
@@ -63,9 +78,11 @@ public class DirectMessageService {
 
 		String nextCursor = null;
 		UUID nextIdAfter = null;
+
 		if (hasNext && !page.isEmpty()) {
 			DirectMessage lastRow = page.get(page.size() - 1);
-			nextCursor = lastRow.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+			nextCursor = lastRow.getCreatedAt()
+				.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 			nextIdAfter = lastRow.getId();
 		}
 

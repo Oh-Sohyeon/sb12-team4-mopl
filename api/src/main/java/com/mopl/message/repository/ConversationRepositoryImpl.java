@@ -40,13 +40,15 @@ public class ConversationRepositoryImpl implements ConversationRepositoryCustom 
 			.and(cursorCondition(cursor, idAfter, sortDirection));
 
 		boolean asc = sortDirection == SortDirection.ASCENDING;
-		OrderSpecifier<?> primaryOrder = asc ? lastDm.createdAt.asc() : lastDm.createdAt.desc();
+		// 메시지가 없는 대화방(lastDm=null)은 시간 기준으로 정렬할 수 없으므로,
+		// 정렬 방향과 무관하게 항상 목록 뒤쪽에 위치시킨다(nullsLast).
+		OrderSpecifier<?> primaryOrder = asc ? lastDm.createdAt.asc().nullsLast() : lastDm.createdAt.desc().nullsLast();
 		OrderSpecifier<?> secondaryOrder = asc ? conversation.id.asc() : conversation.id.desc();
 
 		return queryFactory
 			.select(Projections.constructor(ConversationListRow.class, conversation, lastDm))
 			.from(conversation)
-			.join(lastDm).on(lastMessageJoinCondition())
+			.leftJoin(lastDm).on(lastMessageJoinCondition())
 			.where(where)
 			.orderBy(primaryOrder, secondaryOrder)
 			.limit(limit)
@@ -60,9 +62,9 @@ public class ConversationRepositoryImpl implements ConversationRepositoryCustom 
 			.and(keywordCondition(requesterId, keywordLike));
 
 		Long count = queryFactory
-			.select(conversation.count())
+			.select(conversation.id.countDistinct())
 			.from(conversation)
-			.join(lastDm).on(lastMessageJoinCondition())
+			.leftJoin(lastDm).on(lastMessageJoinCondition())
 			.where(where)
 			.fetchOne();
 
@@ -120,13 +122,25 @@ public class ConversationRepositoryImpl implements ConversationRepositoryCustom 
 			return null;
 		}
 
-		LocalDateTime cursorTime = LocalDateTime.parse(cursor);
 		boolean asc = sortDirection == SortDirection.ASCENDING;
 
-		return asc
+		if (NO_LAST_MESSAGE_CURSOR.equals(cursor)) {
+			// 이미 '메시지 없는 대화방' 구간을 순회 중인 상태.
+			// 이 구간 안에서는 시간 기준이 없으므로 id로만 커서 처리한다.
+			return lastDm.createdAt.isNull()
+				.and(asc ? conversation.id.gt(idAfter) : conversation.id.lt(idAfter));
+		}
+
+		LocalDateTime cursorTime = LocalDateTime.parse(cursor);
+
+		BooleanExpression afterInTimedGroup = asc
 			? lastDm.createdAt.gt(cursorTime)
 			.or(lastDm.createdAt.eq(cursorTime).and(conversation.id.gt(idAfter)))
 			: lastDm.createdAt.lt(cursorTime)
 			.or(lastDm.createdAt.eq(cursorTime).and(conversation.id.lt(idAfter)));
+
+		// 메시지 없는 대화방은 nullsLast 정렬로 항상 뒤쪽에 위치하므로,
+		// 시간 기준 커서를 지난 뒤에는(다음 페이지에서) 전부 포함되어야 한다.
+		return afterInTimedGroup.or(lastDm.createdAt.isNull());
 	}
 }

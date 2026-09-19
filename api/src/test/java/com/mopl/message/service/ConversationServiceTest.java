@@ -1,5 +1,7 @@
 package com.mopl.message.service;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.message.ConversationAccessDeniedException;
 import com.mopl.common.exception.message.ConversationNotFoundException;
 import com.mopl.common.exception.message.ConversationSelfNotAllowedException;
@@ -12,6 +14,7 @@ import com.mopl.message.dto.CursorResponse;
 import com.mopl.message.dto.SortDirection;
 import com.mopl.message.repository.ConversationListRow;
 import com.mopl.message.repository.ConversationRepository;
+import com.mopl.message.repository.ConversationRepositoryCustom;
 import com.mopl.message.repository.DirectMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -267,6 +270,178 @@ class ConversationServiceTest {
 			);
 
 			assertThat(response.data().get(0).hasUnread()).isTrue();
+		}
+
+		@Test
+		@DisplayName("다음 페이지가 있고 마지막 대화에 메시지가 없으면 빈 대화방 전용 커서를 반환한다")
+		void success_noLastMessage_returnsNoLastMessageCursor() {
+			Conversation conversation1 = mock(Conversation.class);
+			UUID conversationId1 = UUID.randomUUID();
+			lenient().when(conversation1.getId()).thenReturn(conversationId1);
+			lenient().when(conversation1.getUser1()).thenReturn(smallerUser);
+			lenient().when(conversation1.getUser2()).thenReturn(largerUser);
+
+			Conversation conversation2 = mock(Conversation.class);
+			UUID conversationId2 = UUID.randomUUID();
+			lenient().when(conversation2.getId()).thenReturn(conversationId2);
+			lenient().when(conversation2.getUser1()).thenReturn(smallerUser);
+			lenient().when(conversation2.getUser2()).thenReturn(largerUser);
+
+			ConversationListRow firstRow =
+				new ConversationListRow(conversation1, null);
+			ConversationListRow secondRow =
+				new ConversationListRow(conversation2, null);
+
+			when(conversationRepository.findConversationsByCursor(
+				eq(smallerId),
+				isNull(),
+				isNull(),
+				isNull(),
+				eq(2),
+				eq(SortDirection.DESCENDING)
+			)).thenReturn(List.of(firstRow, secondRow));
+
+			when(conversationRepository.findConversationIdsWithUnread(
+				eq(smallerId), any()
+			)).thenReturn(List.of());
+
+			when(conversationRepository.countConversations(smallerId, null))
+				.thenReturn(2L);
+
+			CursorResponse<ConversationResponse> response =
+				conversationService.getConversations(
+					smallerId,
+					null,
+					null,
+					null,
+					1,
+					SortDirection.DESCENDING,
+					ConversationSortBy.CREATED_AT
+				);
+
+			assertThat(response.hasNext()).isTrue();
+			assertThat(response.nextCursor())
+				.isEqualTo(ConversationRepositoryCustom.NO_LAST_MESSAGE_CURSOR);
+			assertThat(response.nextIdAfter()).isEqualTo(conversationId1);
+			assertThat(response.data()).hasSize(1);
+			assertThat(response.data().get(0).latestMessage()).isNull();
+		}
+
+		@Test
+		@DisplayName("limit이 0 이하이면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void invalidLimit_throws() {
+			assertThatThrownBy(() -> conversationService.getConversations(
+				smallerId,
+				null,
+				null,
+				null,
+				0,
+				SortDirection.DESCENDING,
+				ConversationSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			assertThatThrownBy(() -> conversationService.getConversations(
+				smallerId,
+				null,
+				null,
+				null,
+				-1,
+				SortDirection.DESCENDING,
+				ConversationSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository);
+		}
+
+		@Test
+		@DisplayName("cursor만 전달하면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void cursorOnly_throws() {
+			assertThatThrownBy(() -> conversationService.getConversations(
+				smallerId,
+				null,
+				"2026-09-20T05:00:00",
+				null,
+				20,
+				SortDirection.DESCENDING,
+				ConversationSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository);
+		}
+
+		@Test
+		@DisplayName("idAfter만 전달하면 INVALID_INPUT_VALUE 예외가 발생한다")
+		void idAfterOnly_throws() {
+			assertThatThrownBy(() -> conversationService.getConversations(
+				smallerId,
+				null,
+				null,
+				UUID.randomUUID(),
+				20,
+				SortDirection.DESCENDING,
+				ConversationSortBy.CREATED_AT
+			))
+				.isInstanceOf(MoplException.class)
+				.satisfies(exception ->
+					assertThat(((MoplException) exception).getErrorCode())
+						.isEqualTo(CommonErrorCode.INVALID_INPUT_VALUE)
+				);
+
+			verifyNoInteractions(conversationRepository);
+		}
+
+		@Test
+		@DisplayName("limit이 최대값을 초과하면 100개 기준으로 조회한다")
+		void limitOverMax_isCappedAt100() {
+			when(conversationRepository.findConversationsByCursor(
+				eq(smallerId),
+				isNull(),
+				isNull(),
+				isNull(),
+				eq(101),
+				eq(SortDirection.DESCENDING)
+			)).thenReturn(List.of());
+
+			when(conversationRepository.findConversationIdsWithUnread(
+				eq(smallerId), any()
+			)).thenReturn(List.of());
+
+			when(conversationRepository.countConversations(smallerId, null))
+				.thenReturn(0L);
+
+			conversationService.getConversations(
+				smallerId,
+				null,
+				null,
+				null,
+				1000,
+				SortDirection.DESCENDING,
+				ConversationSortBy.CREATED_AT
+			);
+
+			verify(conversationRepository).findConversationsByCursor(
+				eq(smallerId),
+				isNull(),
+				isNull(),
+				isNull(),
+				eq(101), // safeLimit 100 + hasNext 확인용 1
+				eq(SortDirection.DESCENDING)
+			);
 		}
 	}
 }

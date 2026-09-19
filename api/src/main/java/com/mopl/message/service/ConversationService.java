@@ -1,5 +1,7 @@
 package com.mopl.message.service;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.message.ConversationAccessDeniedException;
 import com.mopl.common.exception.message.ConversationNotFoundException;
 import com.mopl.common.exception.message.ConversationSelfNotAllowedException;
@@ -12,7 +14,9 @@ import com.mopl.message.dto.CursorResponse;
 import com.mopl.message.dto.SortDirection;
 import com.mopl.message.repository.ConversationListRow;
 import com.mopl.message.repository.ConversationRepository;
+import com.mopl.message.repository.ConversationRepositoryCustom;
 import com.mopl.message.repository.DirectMessageRepository;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +28,8 @@ import java.util.UUID;
 @Service
 @Transactional(readOnly = true)
 public class ConversationService {
+
+	private static final int MAX_LIMIT = 100;
 
 	private final ConversationRepository conversationRepository;
 	private final DirectMessageRepository directMessageRepository;
@@ -77,17 +83,30 @@ public class ConversationService {
 		SortDirection sortDirection,
 		ConversationSortBy sortBy
 	) {
+		if (limit <= 0) {
+			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
+		}
+		if ((cursor == null) != (idAfter == null)) {
+			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
+		}
+
+		int safeLimit = Math.min(limit, MAX_LIMIT);
+
 		List<ConversationListRow> rows = conversationRepository.findConversationsByCursor(
-			requesterId, keywordLike, cursor, idAfter, limit + 1, sortDirection
+			requesterId, keywordLike, cursor, idAfter, safeLimit + 1, sortDirection
 		);
 
-		boolean hasNext = rows.size() > limit;
-		List<ConversationListRow> page = hasNext ? rows.subList(0, limit) : rows;
+		boolean hasNext = rows.size() > safeLimit;
+		List<ConversationListRow> page = hasNext
+			? rows.subList(0, safeLimit)
+			: rows;
 
 		Set<UUID> unreadConversationIds = Set.copyOf(
 			conversationRepository.findConversationIdsWithUnread(
 				requesterId,
-				page.stream().map(row -> row.conversation().getId()).toList()
+				page.stream()
+					.map(row -> row.conversation().getId())
+					.toList()
 			)
 		);
 
@@ -100,13 +119,21 @@ public class ConversationService {
 			))
 			.toList();
 
-		long totalCount = conversationRepository.countConversations(requesterId, keywordLike);
+		long totalCount =
+			conversationRepository.countConversations(requesterId, keywordLike);
 
 		String nextCursor = null;
 		UUID nextIdAfter = null;
+
 		if (hasNext && !page.isEmpty()) {
 			ConversationListRow lastRow = page.get(page.size() - 1);
-			nextCursor = lastRow.lastMessage().getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+
+			nextCursor = lastRow.lastMessage() == null
+				? ConversationRepositoryCustom.NO_LAST_MESSAGE_CURSOR
+				: lastRow.lastMessage()
+					.getCreatedAt()
+					.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+
 			nextIdAfter = lastRow.conversation().getId();
 		}
 
