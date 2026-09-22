@@ -22,7 +22,11 @@ public class SseEmitterManager {
   public SseEmitter connect(UUID userId) {
     SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT);
 
-    emitters.computeIfAbsent(userId, key -> new CopyOnWriteArraySet<>()).add(emitter);
+    emitters.compute(userId, (key, existing) -> {
+      Set<SseEmitter> userEmitters = existing != null ? existing : new CopyOnWriteArraySet<>();
+      userEmitters.add(emitter);
+      return userEmitters;
+    });
 
     emitter.onCompletion(() -> {
       log.info("SSE 연결 종료 (완료) - userId: {}", userId);
@@ -64,13 +68,10 @@ public class SseEmitterManager {
   }
 
   private void removeEmitter(UUID userId, SseEmitter emitter) {
-    Set<SseEmitter> userEmitters = emitters.get(userId);
-    if (userEmitters != null) {
+    emitters.computeIfPresent(userId, (key, userEmitters) -> {
       userEmitters.remove(emitter);
-      if (userEmitters.isEmpty()) {
-        emitters.remove(userId);
-      }
-    }
+      return userEmitters.isEmpty() ? null : userEmitters;
+    });
   }
 
   public void sendHeartbeatToAll() {
