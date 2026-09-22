@@ -73,9 +73,13 @@ public class ContentSearchDocument {
             elementType = "float",
             knnSimilarity = KnnSimilarity.COSINE
     )
-    private List<Double> embedding;
+    private List<Float> embedding;
 
     public static ContentSearchDocument from(Content content, List<Double> embedding) {
+        List<Float> floatEmbedding = embedding.stream()
+                .map(Double::floatValue)
+                .toList();
+
         return new ContentSearchDocument(
                 content.getId().toString(),
                 content.getType().name(),
@@ -89,7 +93,7 @@ public class ContentSearchDocument {
                 content.getExternalRating() == null ? null : content.getExternalRating().doubleValue(),
                 content.getExternalVoteCount(),
                 content.getCreatedAt(),
-                embedding
+                floatEmbedding
         );
     }
 }

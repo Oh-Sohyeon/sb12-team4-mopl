@@ -1,5 +1,7 @@
 package com.mopl.content.search.service;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
 import com.mopl.content.dto.ContentListResponse;
 import com.mopl.content.dto.ContentResponse;
 import com.mopl.content.repository.ContentRepository;
@@ -99,7 +101,7 @@ public class SemanticSearchService {
         long neighborCount = pageable.getOffset() + pageable.getPageSize();
 
         if (neighborCount > MAX_NUM_CANDIDATES) {
-            throw new IllegalArgumentException("Semantic search는 10,000건을 초과하여 조회할 수 없습니다.");
+            throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
         }
 
         return Math.toIntExact(neighborCount);
