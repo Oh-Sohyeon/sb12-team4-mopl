@@ -18,7 +18,5 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     @EntityGraph(attributePaths = "user")
     Page<Review> findAllByContentId(UUID contentId, Pageable pageable);
 
-    Optional<Review> findByUserIdAndContentId(UUID userId, UUID contentId);
-
     boolean existsByUserIdAndContentId(UUID userId, UUID contentId);
 }
