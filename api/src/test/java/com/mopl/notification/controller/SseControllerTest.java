@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.mopl.core.common.enums.NotificationLevel;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -94,6 +95,11 @@ class SseControllerTest {
     Notification missed = mock(Notification.class);
     UUID missedId = UUID.randomUUID();
     given(missed.getId()).willReturn(missedId);
+    given(missed.getReceiver()).willReturn(user);
+    given(missed.getTitle()).willReturn("테스트 알림");
+    given(missed.getContent()).willReturn("테스트 내용");
+    given(missed.getLevel()).willReturn(NotificationLevel.INFO);
+    given(missed.getCreatedAt()).willReturn(LocalDateTime.now());
     given(notificationRepository.findByReceiverWithCursor(
         eq(user), eq(lastEventId), any(), eq(100), eq("ASCENDING")
     )).willReturn(List.of(missed));
