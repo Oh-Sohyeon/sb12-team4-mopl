@@ -25,7 +25,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.junit.jupiter.api.Disabled;
 import com.mopl.common.exception.content.ContentNotFoundException;
 import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
 import com.mopl.common.exception.playlist.PlaylistContentNotFoundException;
@@ -170,7 +169,6 @@ class PlaylistControllerTest {
 		}
 
 		@Test
-		@Disabled("공통 핸들러의 필수 파라미터 누락 400 처리 후 활성화 (GlobalExceptionHandler 후속 이슈)")
 		@DisplayName("limit 파라미터가 없으면 400을 반환한다")
 		void missingLimit_badRequest() throws Exception {
 			mockMvc.perform(get("/playlists")
@@ -229,6 +227,17 @@ class PlaylistControllerTest {
 					.param("ownerIdEqual", ownerIdEqual.toString()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.totalCount").value(1));
+		}
+
+		@Test
+		@DisplayName("ownerIdEqual이 UUID 형식이 아니면 400을 반환한다")
+		void invalidOwnerIdEqualType_badRequest() throws Exception {
+			mockMvc.perform(get("/playlists")
+					.param("limit", "20")
+					.param("sortBy", "updatedAt")
+					.param("sortDirection", "DESCENDING")
+					.param("ownerIdEqual", "invalid-uuid"))
+				.andExpect(status().isBadRequest());
 		}
 
 		@Test
