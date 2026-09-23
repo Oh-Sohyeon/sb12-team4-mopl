@@ -36,6 +36,7 @@ public class SemanticCandidateSearchService {
     private static final String EMBEDDING_FIELD = "embedding";
     private static final int NUM_CANDIDATES_MULTIPLIER = 5;
     private static final int MAX_CANDIDATE_SIZE = 10_000;
+    private static final int OVER_FETCH_MULTIPLIER = 2;
 
     private final EmbeddingClient embeddingClient;
     private final ElasticsearchOperations elasticsearchOperations;
@@ -79,6 +80,7 @@ public class SemanticCandidateSearchService {
                 .map(searchHit ->
                         createCandidate(searchHit, contentById))
                 .filter(Objects::nonNull)
+                .limit(size)
                 .toList();
     }
 
@@ -116,14 +118,15 @@ public class SemanticCandidateSearchService {
             SemanticCandidateCondition condition,
             int size
     ) {
-        int numCandidates = calculateNumCandidates(size);
+        int fetchSize = calculateFetchSize(size);
+        int numCandidates = calculateNumCandidates(fetchSize);
         List<Query> filters = buildFilters(condition);
 
         return NativeQuery.builder()
                 .withKnnSearches(knn -> {
                     knn.field(EMBEDDING_FIELD)
                             .queryVector(queryVector)
-                            .k(size)
+                            .k(fetchSize)
                             .numCandidates(numCandidates);
 
                     if (!filters.isEmpty()) {
@@ -132,7 +135,7 @@ public class SemanticCandidateSearchService {
 
                     return knn;
                 })
-                .withPageable(PageRequest.of(0, size))
+                .withPageable(PageRequest.of(0, fetchSize))
                 .build();
     }
 
@@ -186,6 +189,15 @@ public class SemanticCandidateSearchService {
 
         return (int) Math.min(
                 numCandidates,
+                MAX_CANDIDATE_SIZE
+        );
+    }
+
+    private int calculateFetchSize(int size) {
+        long fetchSize = (long) size * OVER_FETCH_MULTIPLIER;
+
+        return (int) Math.min(
+                fetchSize,
                 MAX_CANDIDATE_SIZE
         );
     }

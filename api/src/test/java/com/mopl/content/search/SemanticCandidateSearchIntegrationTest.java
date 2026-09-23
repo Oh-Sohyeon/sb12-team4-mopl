@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -463,6 +464,68 @@ public class SemanticCandidateSearchIntegrationTest {
                                 CommonErrorCode.INVALID_INPUT_VALUE
                         )
                 );
+    }
+
+    @Test
+    void searchThrowsMoplExceptionWhenTagConditionContainsNull() {
+        SemanticCandidateCondition condition =
+                new SemanticCandidateCondition(
+                        null,
+                        Collections.singletonList(null)
+                );
+
+        assertThatThrownBy(() ->
+                semanticCandidateSearchService.search(
+                        "검색어",
+                        condition,
+                        10
+                )
+        )
+                .isInstanceOf(MoplException.class)
+                .satisfies(exception ->
+                        assertThat(
+                                ((MoplException) exception)
+                                        .getErrorCode()
+                        ).isEqualTo(
+                                CommonErrorCode.INVALID_INPUT_VALUE
+                        )
+                );
+    }
+
+    @Test
+    void searchOverFetchesWhenTopCandidateIsStale() {
+        Content deletedContent = createContent(
+                ContentType.MOVIE,
+                "Deleted Content",
+                "Most similar content"
+        );
+
+        Content activeContent = createContent(
+                ContentType.MOVIE,
+                "Cooking Movie",
+                "Less similar but active content"
+        );
+
+        contentRepository.saveAll(
+                List.of(deletedContent, activeContent)
+        );
+
+        contentSearchIndexer.reindexAll();
+
+        // ES에는 남겨두고 MySQL에서만 soft delete
+        deletedContent.delete();
+        contentRepository.saveAndFlush(deletedContent);
+
+        List<ContentCandidate> candidates =
+                semanticCandidateSearchService.search(
+                        "추천 콘텐츠",
+                        null,
+                        1
+                );
+
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.getFirst().contentId())
+                .isEqualTo(activeContent.getId());
     }
 
     // 색인용 Content와 검색 query에 서로 다른 벡터를 반환
