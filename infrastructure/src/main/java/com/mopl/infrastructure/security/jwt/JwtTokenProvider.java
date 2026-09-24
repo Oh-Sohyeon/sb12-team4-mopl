@@ -1,6 +1,7 @@
-package com.mopl.auth.jwt;
+package com.mopl.infrastructure.security.jwt;
 
 import com.mopl.core.common.enums.UserRole;
+
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;

@@ -1,6 +1,6 @@
 package com.mopl.auth.redis;
 
-import com.mopl.auth.jwt.JwtProperties;
+import com.mopl.infrastructure.security.jwt.JwtProperties;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
