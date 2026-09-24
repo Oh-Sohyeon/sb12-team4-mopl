@@ -9,7 +9,11 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
+import com.mopl.content.dto.ContentListItemResponse;
+import com.mopl.content.search.document.ContentSearchDocument;
+import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.infrastructure.ai.client.EmbeddingClient;
 import com.mopl.infrastructure.ai.dto.EmbeddingRequest;
 import com.mopl.infrastructure.ai.dto.EmbeddingResponse;
@@ -17,8 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -28,7 +31,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-import com.mopl.content.dto.ContentListResponse;
 import com.mopl.content.dto.ContentSearchCondition;
 import com.mopl.content.repository.ContentRepository;
 import com.mopl.content.search.repository.ContentSearchRepository;
@@ -40,7 +42,8 @@ import com.mopl.core.domain.content.entity.Content;
 
 @SpringBootTest(properties = {
         "spring.data.redis.host=localhost",
-        "spring.data.redis.port=6379"
+        "spring.data.redis.port=6379",
+        "mopl.elasticsearch.reindex-on-startup=false"
 })
 @Testcontainers
 public class ContentSearchIntegrationTest {
@@ -72,6 +75,9 @@ public class ContentSearchIntegrationTest {
     @Autowired
     private ContentSearchService contentSearchService;
 
+    @Autowired
+    private ElasticsearchOperations elasticsearchOperations;
+
     @MockitoBean
     private EmbeddingClient embeddingClient;
 
@@ -86,6 +92,9 @@ public class ContentSearchIntegrationTest {
     @BeforeEach
     void setUp() {
         contentSearchRepository.deleteAll();
+
+        refreshSearchIndex();
+
         contentRepository.deleteAllInBatch();
 
         when(embeddingClient.embed(any(EmbeddingRequest.class)))
@@ -93,7 +102,7 @@ public class ContentSearchIntegrationTest {
     }
 
     @Test
-    void searchByKeywordTypeAndDateRange() {
+    void searchByKeywordAndType() {
         Content spiderMan = createContent(
                 ContentType.MOVIE,
                 "Spider Hero",
@@ -116,68 +125,114 @@ public class ContentSearchIntegrationTest {
 
         long indexedCount = contentSearchIndexer.reindexAll();
 
+        refreshSearchIndex();
+
         ContentSearchCondition condition = new ContentSearchCondition(
-                "Hero",
                 ContentType.MOVIE,
-                LocalDate.of(2026, 1, 1),
-                LocalDate.of(2026, 12, 31)
+                "Hero",
+                List.of()
         );
 
-        ContentListResponse response = contentSearchService.search(
+        CursorResponse<ContentListItemResponse> response = contentSearchService.search(
                 condition,
-                PageRequest.of(0, 10)
+                null,
+                null,
+                10,
+                "createdAt",
+                "DESCENDING"
         );
 
         assertThat(indexedCount).isEqualTo(2);
-        assertThat(response.totalElements()).isEqualTo(1);
-        assertThat(response.contents()).hasSize(1);
-        assertThat(response.contents().getFirst().title())
+        assertThat(response.totalCount()).isEqualTo(1);
+        assertThat(response.data()).hasSize(1);
+        assertThat(response.data().getFirst().title())
                 .isEqualTo("Spider Hero");
     }
 
     @Test
-    void searchSortsByExternalPopularityDescending() {
+    void searchUsesCursorForNextPage() {
         Content first = createContent(
                 ContentType.MOVIE,
-                "First Movie",
+                "Movie A",
                 "movie",
                 LocalDate.of(2026, 1, 1),
                 new BigDecimal("100.0"),
-                new BigDecimal("7.0")
+                new BigDecimal("4.0")
         );
 
         Content second = createContent(
                 ContentType.MOVIE,
-                "Second Movie",
+                "Movie B",
                 "movie",
                 LocalDate.of(2026, 1, 2),
-                new BigDecimal("500.0"),
-                new BigDecimal("8.0")
+                new BigDecimal("200.0"),
+                new BigDecimal("4.0")
         );
 
-        contentRepository.saveAll(List.of(first, second));
+        Content third = createContent(
+                ContentType.MOVIE,
+                "Movie C",
+                "movie",
+                LocalDate.of(2026, 1, 3),
+                new BigDecimal("300.0"),
+                new BigDecimal("4.0")
+        );
+
+        contentRepository.saveAndFlush(first);
+        contentRepository.saveAndFlush(second);
+        contentRepository.saveAndFlush(third);
 
         contentSearchIndexer.reindexAll();
 
-        ContentSearchCondition condition = new ContentSearchCondition(
-                null,
-                ContentType.MOVIE,
-                null,
-                null
-        );
+        refreshSearchIndex();
 
-        ContentListResponse response = contentSearchService.search(
-                condition,
-                PageRequest.of(0, 10, Sort.by(
-                        Sort.Direction.DESC, "externalPopularity"
-                ))
-        );
+        ContentSearchCondition condition =
+                new ContentSearchCondition(
+                        ContentType.MOVIE,
+                        null,
+                        List.of()
+                );
 
-        assertThat(response.contents()).hasSize(2);
-        assertThat(response.contents().get(0).title())
-                .isEqualTo("Second Movie");
-        assertThat(response.contents().get(1).title())
-                .isEqualTo("First Movie");
+        // [추가] 첫 페이지
+        CursorResponse<ContentListItemResponse> firstPage =
+                contentSearchService.search(
+                        condition,
+                        null,
+                        null,
+                        2,
+                        "createdAt",
+                        "DESCENDING"
+                );
+
+        assertThat(firstPage.data()).hasSize(2);
+        assertThat(firstPage.hasNext()).isTrue();
+        assertThat(firstPage.nextCursor()).isNotBlank();
+        assertThat(firstPage.nextIdAfter()).isNotBlank();
+
+        // [추가] 첫 페이지가 반환한 cursor로 다음 페이지 조회
+        CursorResponse<ContentListItemResponse> secondPage =
+                contentSearchService.search(
+                        condition,
+                        firstPage.nextCursor(),
+                        UUID.fromString(firstPage.nextIdAfter()),
+                        2,
+                        "createdAt",
+                        "DESCENDING"
+                );
+
+        assertThat(secondPage.data()).hasSize(1);
+        assertThat(secondPage.hasNext()).isFalse();
+
+        // [추가] 페이지 간 중복 콘텐츠가 없어야 함
+        assertThat(secondPage.data().getFirst().id())
+                .isNotIn(
+                        firstPage.data().get(0).id(),
+                        firstPage.data().get(1).id()
+                );
+
+        // [추가] 필터 전체 결과 수는 페이지와 무관하게 동일
+        assertThat(firstPage.totalCount()).isEqualTo(3L);
+        assertThat(secondPage.totalCount()).isEqualTo(3L);
     }
 
     private Content createContent(
@@ -200,5 +255,11 @@ public class ContentSearchIntegrationTest {
                 rating,
                 100L
         );
+    }
+
+    private void refreshSearchIndex() {
+        elasticsearchOperations
+                .indexOps(ContentSearchDocument.class)
+                .refresh();
     }
 }
