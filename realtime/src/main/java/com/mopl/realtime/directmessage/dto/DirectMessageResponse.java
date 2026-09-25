@@ -1,6 +1,8 @@
 package com.mopl.realtime.directmessage.dto;
 
 import com.mopl.core.domain.message.entity.DirectMessage;
+import com.mopl.realtime.common.dto.UserSummary;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 

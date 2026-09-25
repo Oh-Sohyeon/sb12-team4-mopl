@@ -1,4 +1,4 @@
-package com.mopl.realtime.directmessage.dto;
+package com.mopl.realtime.common.dto;
 
 import com.mopl.core.domain.user.entity.User;
 import java.util.UUID;
