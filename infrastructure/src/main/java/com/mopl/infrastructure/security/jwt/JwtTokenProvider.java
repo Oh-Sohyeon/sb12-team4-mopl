@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 import javax.crypto.SecretKey;
-import org.springframework.stereotype.Component;
 
 /**
  * JWT 발급 / 파싱 담당.
@@ -20,7 +19,6 @@ import org.springframework.stereotype.Component;
  *   runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
  *   runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
  */
-@Component
 public class JwtTokenProvider {
 
     private static final String CLAIM_EMAIL = "email";
