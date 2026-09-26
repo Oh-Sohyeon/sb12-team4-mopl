@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -231,6 +232,109 @@ public class ContentSearchIntegrationTest {
                 );
 
         // [추가] 필터 전체 결과 수는 페이지와 무관하게 동일
+        assertThat(firstPage.totalCount()).isEqualTo(3L);
+        assertThat(secondPage.totalCount()).isEqualTo(3L);
+    }
+
+    @Test
+    void searchUsesIdAsTieBreakerWhenSortValuesAreEqual() {
+        Content first = createContent(
+                ContentType.MOVIE,
+                "Tie Breaker Movie 1",
+                "movie",
+                LocalDate.of(2026, 1, 1),
+                new BigDecimal("100.0"),
+                new BigDecimal("7.0")
+        );
+
+        Content second = createContent(
+                ContentType.MOVIE,
+                "Tie Breaker Movie 2",
+                "movie",
+                LocalDate.of(2026, 1, 2),
+                new BigDecimal("200.0"),
+                new BigDecimal("8.0")
+        );
+
+        Content third = createContent(
+                ContentType.MOVIE,
+                "Tie Breaker Movie 3",
+                "movie",
+                LocalDate.of(2026, 1, 3),
+                new BigDecimal("300.0"),
+                new BigDecimal("9.0")
+        );
+
+        contentRepository.saveAndFlush(first);
+        contentRepository.saveAndFlush(second);
+        contentRepository.saveAndFlush(third);
+
+        contentSearchIndexer.reindexAll();
+
+        // [추가]
+        // reindex 직후 검색 결과가 즉시 보이도록 refresh
+        refreshSearchIndex();
+
+        ContentSearchCondition condition = new ContentSearchCondition(
+                ContentType.MOVIE,
+                null,
+                List.of()
+        );
+
+        // [추가]
+        // 리뷰가 없으므로 세 콘텐츠 모두 averageRating = 0.0
+        // 따라서 rate 정렬값이 동일하고 id가 실제 tie-breaker로 사용되어야 함
+        CursorResponse<ContentListItemResponse> firstPage =
+                contentSearchService.search(
+                        condition,
+                        null,
+                        null,
+                        2,
+                        "rate",
+                        "ASCENDING"
+                );
+
+        assertThat(firstPage.data()).hasSize(2);
+        assertThat(firstPage.hasNext()).isTrue();
+        assertThat(firstPage.nextCursor()).isNotBlank();
+        assertThat(firstPage.nextIdAfter()).isNotBlank();
+
+        CursorResponse<ContentListItemResponse> secondPage =
+                contentSearchService.search(
+                        condition,
+                        firstPage.nextCursor(),
+                        UUID.fromString(firstPage.nextIdAfter()),
+                        2,
+                        "rate",
+                        "ASCENDING"
+                );
+
+        assertThat(secondPage.data()).hasSize(1);
+        assertThat(secondPage.hasNext()).isFalse();
+
+        // [추가]
+        // primary sort(rate)가 모두 같으므로 id ASC 보조 정렬 순서 검증
+        List<UUID> expectedIds = List.of(
+                        first.getId(),
+                        second.getId(),
+                        third.getId()
+                )
+                .stream()
+                .sorted(Comparator.comparing(UUID::toString))
+                .toList();
+
+        List<UUID> actualIds = List.of(
+                firstPage.data().get(0).id(),
+                firstPage.data().get(1).id(),
+                secondPage.data().get(0).id()
+        );
+
+        // [추가]
+        // 페이지 사이 중복/누락 없이 id tie-breaker 순서대로 조회되는지 검증
+        assertThat(actualIds)
+                .containsExactlyElementsOf(expectedIds)
+                .doesNotHaveDuplicates();
+
         assertThat(firstPage.totalCount()).isEqualTo(3L);
         assertThat(secondPage.totalCount()).isEqualTo(3L);
     }
