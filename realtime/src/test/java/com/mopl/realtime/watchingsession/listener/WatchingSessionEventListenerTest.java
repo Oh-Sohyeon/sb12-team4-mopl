@@ -248,6 +248,89 @@ class WatchingSessionEventListenerTest {
 				)
 			);
 		}
+
+		@Test
+		@DisplayName("같은 콘텐츠를 다시 구독하면 LEAVE 없이 새 세션의 JOIN만 전송한다")
+		void resubscribesSameContent() {
+			UUID userId = UUID.randomUUID();
+			UUID contentId = UUID.randomUUID();
+
+			when(principal.getName()).thenReturn(userId.toString());
+
+			StompHeaderAccessor accessor =
+				StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+
+			accessor.setDestination(
+				"/sub/contents/" + contentId + "/watch"
+			);
+			accessor.setSessionId("new-ws");
+			accessor.setSubscriptionId("new-sub");
+			accessor.setUser(principal);
+
+			Message<byte[]> message = MessageBuilder.createMessage(
+				new byte[0],
+				accessor.getMessageHeaders()
+			);
+
+			WatchingSessionState previousSession = new WatchingSessionState(
+				UUID.randomUUID(),
+				userId,
+				contentId,
+				"old-ws",
+				"old-sub",
+				Instant.now()
+			);
+
+			WatchingSessionState newSession = new WatchingSessionState(
+				UUID.randomUUID(),
+				userId,
+				contentId,
+				"new-ws",
+				"new-sub",
+				Instant.now()
+			);
+
+			WatchingSessionDto newDto = mock(WatchingSessionDto.class);
+
+			when(watchingSessionService.join(
+				userId,
+				contentId,
+				"new-ws",
+				"new-sub"
+			)).thenReturn(
+				new WatchingSessionJoinResult(
+					newSession,
+					Optional.of(previousSession)
+				)
+			);
+
+			when(watchingSessionService.toDto(newSession))
+				.thenReturn(newDto);
+
+			when(watchingSessionService.count(contentId))
+				.thenReturn(1L);
+
+			listener.handleSubscribe(
+				new SessionSubscribeEvent(this, message)
+			);
+
+			verify(messagingTemplate).convertAndSend(
+				"/sub/contents/" + contentId + "/watch",
+				new WatchingSessionChange(
+					ChangeType.JOIN,
+					newDto,
+					1L
+				)
+			);
+
+			verify(watchingSessionService, never()).toDto(previousSession);
+
+			verify(messagingTemplate, times(1))
+				.convertAndSend(
+					eq("/sub/contents/" + contentId + "/watch"),
+					any(WatchingSessionChange.class)
+				);
+		}
 	}
 
 	@Nested

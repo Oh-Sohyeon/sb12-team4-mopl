@@ -63,7 +63,10 @@ public class WatchingSessionEventListener {
 			subscriptionId
 		);
 
-		result.leftSession().ifPresent(this::broadcastLeave);
+		result.leftSession()
+			.filter(previousSession ->
+				!previousSession.contentId().equals(contentId))
+			.ifPresent(this::broadcastLeave);
 
 		WatchingSessionState session = result.joinedSession();
 
