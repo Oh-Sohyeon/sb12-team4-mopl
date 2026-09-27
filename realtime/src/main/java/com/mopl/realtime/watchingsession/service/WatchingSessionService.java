@@ -28,6 +28,9 @@ public class WatchingSessionService {
 	private final ContentRepository contentRepository;
 	private final ContentSummaryRepository contentSummaryRepository;
 
+	// 사용자당 활성 시청 세션은 하나만 유지한다.
+	// 새 시청 세션에 참여하면 기존 세션을 종료하고 새 세션으로 교체한다.
+	// TODO Redis의 기존 세션 조회/삭제/신규 저장을 atomic하게 처리하도록 개선한다.
 	public WatchingSessionJoinResult join(
 		UUID userId,
 		UUID contentId,

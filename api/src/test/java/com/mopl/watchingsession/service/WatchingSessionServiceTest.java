@@ -315,7 +315,7 @@ class WatchingSessionServiceTest {
 			);
 
 		assertThat(result.data()).hasSize(1);
-		assertThat(result.data().get(0).id()).isEqualTo(session3.id());
+		assertThat(result.data().getFirst().id()).isEqualTo(session3.id());
 
 		assertThat(result.hasNext()).isFalse();
 		assertThat(result.nextCursor()).isNull();
@@ -391,13 +391,75 @@ class WatchingSessionServiceTest {
 			);
 
 		assertThat(result.data()).hasSize(1);
-		assertThat(result.data().get(0).watcher().userId())
+		assertThat(result.data().getFirst().watcher().userId())
 			.isEqualTo(watcherId1);
-		assertThat(result.data().get(0).watcher().name())
+
+		assertThat(result.data().getFirst().watcher().name())
 			.isEqualTo("예성");
 
 		assertThat(result.totalCount()).isEqualTo(1);
 		assertThat(result.hasNext()).isFalse();
+	}
+
+	@Test
+	@DisplayName("limit이 최대값을 초과하면 100개로 제한한다")
+	void getWatchingSessions_capsLimitAtMaxLimit() {
+		UUID contentId = UUID.randomUUID();
+
+		Content content = mock(Content.class);
+
+		when(contentRepository.findByIdAndDeletedAtIsNull(contentId))
+			.thenReturn(Optional.of(content));
+		when(content.getId()).thenReturn(contentId);
+
+		when(contentSummaryRepository.findByContentId(contentId))
+			.thenReturn(new ContentSummaryQueryResult(
+				List.of(),
+				4.5,
+				10
+			));
+
+		List<WatchingSessionState> sessions = new java.util.ArrayList<>();
+
+		for (int i = 0; i < 101; i++) {
+			UUID watcherId = UUID.randomUUID();
+
+			WatchingSessionState session = new WatchingSessionState(
+				UUID.randomUUID(),
+				watcherId,
+				contentId,
+				"ws-" + i,
+				"sub-" + i,
+				Instant.parse("2026-09-26T10:00:00Z").plusSeconds(i)
+			);
+
+			User watcher = mock(User.class);
+
+			when(userRepository.findByIdAndDeletedAtIsNull(watcherId))
+				.thenReturn(Optional.of(watcher));
+			when(watcher.getId()).thenReturn(watcherId);
+			when(watcher.getName()).thenReturn("사용자" + i);
+
+			sessions.add(session);
+		}
+
+		when(watchingSessionRepository.findAllByContentId(contentId))
+			.thenReturn(sessions);
+
+		CursorResponse<WatchingSessionResponse> result =
+			watchingSessionService.getWatchingSessions(
+				contentId,
+				null,
+				null,
+				null,
+				101,
+				"createdAt",
+				"ASCENDING"
+			);
+
+		assertThat(result.data()).hasSize(100);
+		assertThat(result.hasNext()).isTrue();
+		assertThat(result.totalCount()).isEqualTo(101);
 	}
 
 	@Test

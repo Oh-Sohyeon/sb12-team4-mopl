@@ -23,11 +23,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class WatchingSessionService {
+
+	private static final int MAX_LIMIT = 100;
 
 	private final WatchingSessionRedisRepository watchingSessionRepository;
 	private final UserRepository userRepository;
@@ -77,6 +80,8 @@ public class WatchingSessionService {
 			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
 		}
 
+		int safeLimit = Math.min(limit, MAX_LIMIT);
+
 		if ((cursor == null) != (idAfter == null)) {
 			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
 		}
@@ -124,8 +129,8 @@ public class WatchingSessionService {
 				watcherNameLike == null
 					|| watcherNameLike.isBlank()
 					|| response.watcher().name()
-					.toLowerCase()
-					.contains(watcherNameLike.toLowerCase())
+					.toLowerCase(Locale.ROOT)
+					.contains(watcherNameLike.toLowerCase(Locale.ROOT))
 			)
 			.sorted((a, b) -> {
 				int compared = a.createdAt().compareTo(b.createdAt());
@@ -161,17 +166,17 @@ public class WatchingSessionService {
 				.toList();
 		}
 
-		boolean hasNext = sessions.size() > limit;
+		boolean hasNext = sessions.size() > safeLimit;
 
 		List<WatchingSessionResponse> data = hasNext
-			? sessions.subList(0, limit)
+			? sessions.subList(0, safeLimit)
 			: sessions;
 
 		String nextCursor = null;
 		UUID nextIdAfter = null;
 
 		if (hasNext) {
-			WatchingSessionResponse last = data.get(data.size() - 1);
+			WatchingSessionResponse last = data.getLast();
 			nextCursor = last.createdAt().toString();
 			nextIdAfter = last.id();
 		}
@@ -183,7 +188,7 @@ public class WatchingSessionService {
 			hasNext,
 			totalCount,
 			sortBy,
-			sortDirection.toUpperCase()
+			sortDirection.toUpperCase(Locale.ROOT)
 		);
 	}
 

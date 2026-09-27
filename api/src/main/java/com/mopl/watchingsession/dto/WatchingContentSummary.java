@@ -14,6 +14,4 @@ public record WatchingContentSummary(
 	double averageRating,
 	int reviewCount
 ) {
-	// TODO: API와 Realtime의 ContentSummary 데이터 조립 로직 공통화 검토
-	// (tags, averageRating, reviewCount 중복 조회/집계 방지)
 }
