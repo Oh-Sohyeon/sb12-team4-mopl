@@ -1,6 +1,8 @@
 package com.mopl.realtime.contentchat;
 
 import com.fasterxml.jackson.databind.JsonNode;
+
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -25,6 +27,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("e2e")
 class ContentChatStompE2ETest {
 
 	private static final Logger log =
