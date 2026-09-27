@@ -60,7 +60,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void authenticate(String token) {
-        Claims claims = jwtTokenProvider.parseClaims(token);
+        Claims claims = jwtTokenProvider.parseAccessTokenClaims(token);
         UUID userId = jwtTokenProvider.getUserId(claims);
         Instant issuedAt = jwtTokenProvider.getIssuedAt(claims);
 

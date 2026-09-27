@@ -74,6 +74,19 @@ public class JwtTokenProvider {
                 .getPayload();
     }
 
+    public Claims parseAccessTokenClaims(String token) {
+        Claims claims = parseClaims(token);
+
+        String email = getEmail(claims);
+        UserRole role = getRole(claims);
+
+        if (email == null || email.isBlank() || role == null) {
+            throw new JwtException("Access token is required");
+        }
+
+        return claims;
+    }
+
     public boolean isValid(String token) {
         try {
             parseClaims(token);

@@ -12,6 +12,7 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
+import com.mopl.infrastructure.security.token.AccessTokenInvalidationService;
 
 @Component
 @RequiredArgsConstructor
@@ -23,6 +24,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 	private static final String CONVERSATION_SUBSCRIBE_PREFIX = "/sub/conversations/";
 	private static final String DIRECT_MESSAGE_SUFFIX = "/direct-messages";
 
+	private final AccessTokenInvalidationService accessTokenInvalidationService;
 	private final JwtTokenProvider jwtTokenProvider;
 	private final ConversationRepository conversationRepository;
 
@@ -59,11 +61,19 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 		}
 
 		String token = authorization.substring(BEARER_PREFIX.length()).trim();
+		Claims claims = jwtTokenProvider.parseAccessTokenClaims(token);
 
-		Claims claims = jwtTokenProvider.parseClaims(token);
+		UUID userId = jwtTokenProvider.getUserId(claims);
+
+		if (accessTokenInvalidationService.isInvalidated(
+			userId,
+			jwtTokenProvider.getIssuedAt(claims)
+		)) {
+			throw new IllegalArgumentException("Invalidated access token");
+		}
 
 		StompPrincipal principal = new StompPrincipal(
-			jwtTokenProvider.getUserId(claims),
+			userId,
 			jwtTokenProvider.getEmail(claims),
 			jwtTokenProvider.getRole(claims)
 		);

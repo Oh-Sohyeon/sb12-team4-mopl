@@ -9,7 +9,10 @@ import static org.mockito.Mockito.when;
 import com.mopl.core.common.enums.UserRole;
 import com.mopl.infrastructure.security.jwt.JwtTokenProvider;
 import com.mopl.realtime.directmessage.repository.ConversationRepository;
+import com.mopl.infrastructure.security.token.AccessTokenInvalidationService;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Claims;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,11 +42,15 @@ class WebSocketAuthInterceptorTest {
 	@Mock
 	private Claims claims;
 
+	@Mock
+	private AccessTokenInvalidationService accessTokenInvalidationService;
+
 	private WebSocketAuthInterceptor interceptor;
 
 	@BeforeEach
 	void setUp() {
 		interceptor = new WebSocketAuthInterceptor(
+			accessTokenInvalidationService,
 			jwtTokenProvider,
 			conversationRepository
 		);
@@ -57,11 +64,16 @@ class WebSocketAuthInterceptorTest {
 		@DisplayName("유효한 Access Token이면 Principal을 설정한다")
 		void success() {
 			UUID userId = UUID.randomUUID();
+			Instant issuedAt = Instant.now();
 
-			when(jwtTokenProvider.parseClaims("access-token"))
+			when(jwtTokenProvider.parseAccessTokenClaims("access-token"))
 				.thenReturn(claims);
 			when(jwtTokenProvider.getUserId(claims))
 				.thenReturn(userId);
+			when(jwtTokenProvider.getIssuedAt(claims))
+				.thenReturn(issuedAt);
+			when(accessTokenInvalidationService.isInvalidated(userId, issuedAt))
+				.thenReturn(false);
 			when(jwtTokenProvider.getEmail(claims))
 				.thenReturn("user@test.com");
 			when(jwtTokenProvider.getRole(claims))
@@ -91,6 +103,9 @@ class WebSocketAuthInterceptorTest {
 			assertThat(principal.userId()).isEqualTo(userId);
 			assertThat(principal.email()).isEqualTo("user@test.com");
 			assertThat(principal.role()).isEqualTo(UserRole.USER);
+
+			verify(accessTokenInvalidationService)
+				.isInvalidated(userId, issuedAt);
 		}
 
 		@Test
@@ -111,7 +126,73 @@ class WebSocketAuthInterceptorTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("Access token is required");
 
-			verifyNoInteractions(jwtTokenProvider);
+			verifyNoInteractions(jwtTokenProvider, accessTokenInvalidationService);
+		}
+
+		@Test
+		@DisplayName("무효화된 Access Token이면 연결을 거부한다")
+		void invalidatedAccessToken_throws() {
+			UUID userId = UUID.randomUUID();
+			Instant issuedAt = Instant.now();
+
+			when(jwtTokenProvider.parseAccessTokenClaims("access-token"))
+				.thenReturn(claims);
+			when(jwtTokenProvider.getUserId(claims))
+				.thenReturn(userId);
+			when(jwtTokenProvider.getIssuedAt(claims))
+				.thenReturn(issuedAt);
+			when(accessTokenInvalidationService.isInvalidated(userId, issuedAt))
+				.thenReturn(true);
+
+			StompHeaderAccessor accessor =
+				StompHeaderAccessor.create(StompCommand.CONNECT);
+			accessor.setNativeHeader(
+				"Authorization",
+				"Bearer access-token"
+			);
+			accessor.setLeaveMutable(true);
+
+			Message<byte[]> message = MessageBuilder.createMessage(
+				new byte[0],
+				accessor.getMessageHeaders()
+			);
+
+			assertThatThrownBy(() ->
+				interceptor.preSend(message, messageChannel)
+			)
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("Invalidated access token");
+
+			assertThat(accessor.getUser()).isNull();
+		}
+
+		@Test
+		@DisplayName("Refresh Token이면 연결을 거부한다")
+		void refreshToken_throws() {
+			when(jwtTokenProvider.parseAccessTokenClaims("refresh-token"))
+				.thenThrow(new JwtException("Access token is required"));
+
+			StompHeaderAccessor accessor =
+				StompHeaderAccessor.create(StompCommand.CONNECT);
+			accessor.setNativeHeader(
+				"Authorization",
+				"Bearer refresh-token"
+			);
+			accessor.setLeaveMutable(true);
+
+			Message<byte[]> message = MessageBuilder.createMessage(
+				new byte[0],
+				accessor.getMessageHeaders()
+			);
+
+			assertThatThrownBy(() ->
+				interceptor.preSend(message, messageChannel)
+			)
+				.isInstanceOf(JwtException.class)
+				.hasMessage("Access token is required");
+
+			assertThat(accessor.getUser()).isNull();
+			verifyNoInteractions(accessTokenInvalidationService);
 		}
 	}
 
