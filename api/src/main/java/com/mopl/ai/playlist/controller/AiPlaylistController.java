@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/ai/playlists")
@@ -18,7 +20,7 @@ public class AiPlaylistController {
 	@PostMapping("/chat")
 	public AiPlaylistChatResponse chat(
 		@AuthenticationPrincipal AuthUser authUser,
-		@RequestBody AiPlaylistChatRequest request
+		@RequestBody @Valid AiPlaylistChatRequest request
 	) {
 		String message = aiPlaylistChatService.chat(
 			authUser.userId(),

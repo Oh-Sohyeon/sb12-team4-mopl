@@ -76,10 +76,18 @@ public class AiPlaylistTools {
 		List<UUID> contentIds,
 		ToolContext toolContext
 	) {
-		UUID currentUserId = (UUID) toolContext.getContext().get("currentUserId");
+		if (contentIds == null || contentIds.isEmpty()) {
+			throw new IllegalArgumentException(
+				"플레이리스트에는 하나 이상의 콘텐츠가 필요합니다."
+			);
+		}
+
+		UUID currentUserId =
+			(UUID) toolContext.getContext().get("currentUserId");
 
 		String conversationId =
 			(String) toolContext.getContext().get("conversationId");
+
 
 		if (!aiPlaylistCandidateStore.containsAll(
 			conversationId,

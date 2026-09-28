@@ -18,14 +18,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.Assert.*;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class AiPlaylistToolsTest {
 
 	private PlaylistService playlistService;
 	private AiPlaylistTools aiPlaylistTools;
+	private AiPlaylistCandidateStore candidateStore;
 
 	@BeforeEach
 	void setUp() {
@@ -34,8 +34,7 @@ class AiPlaylistToolsTest {
 		SemanticCandidateSearchService semanticCandidateSearchService =
 			mock(SemanticCandidateSearchService.class);
 
-		AiPlaylistCandidateStore candidateStore =
-			new AiPlaylistCandidateStore();
+		candidateStore = new AiPlaylistCandidateStore();
 
 		aiPlaylistTools = new AiPlaylistTools(
 			playlistService,
@@ -181,5 +180,35 @@ class AiPlaylistToolsTest {
 			any(SemanticCandidateCondition.class),
 			eq(10)
 		);
+	}
+
+	@Test
+	@DisplayName("콘텐츠가 없으면 플레이리스트를 생성하지 않는다")
+	void createPlaylistWithEmptyContentsFails() {
+		UUID currentUserId = UUID.randomUUID();
+		String conversationId = "test-conversation";
+
+		// 검색을 한 상태를 먼저 만든다.
+		candidateStore.saveCandidates(
+			conversationId,
+			Set.of(UUID.randomUUID())
+		);
+
+		ToolContext toolContext = new ToolContext(Map.of(
+			"currentUserId", currentUserId,
+			"conversationId", conversationId
+		));
+
+		assertThrows(
+			IllegalArgumentException.class,
+			() -> aiPlaylistTools.createPlaylist(
+				"테스트 플레이리스트",
+				"테스트 설명",
+				List.of(),
+				toolContext
+			)
+		);
+
+		verifyNoInteractions(playlistService);
 	}
 }
