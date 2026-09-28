@@ -34,14 +34,16 @@ public class AiPlaylistChatService {
 				사용자가 플레이리스트 생성을 명확하게 요청한 경우에만 createPlaylist 도구를 사용하세요.
 				사용자가 단순히 콘텐츠 추천이나 검색만 요청한 경우에는 플레이리스트를 생성하지 마세요.
 			
-				createPlaylist를 호출할 때는 현재 대화에서 최종적으로 구성된 실제 콘텐츠의 ID만 사용하세요.
+				createPlaylist를 호출할 때 contentIds에는 콘텐츠 제목을 넣지 말고,
+				반드시 searchContents 결과에서 해당 콘텐츠와 함께 반환된 contentId UUID를 사용하세요.
 				""")
 			.advisors(advisor -> advisor.param(
 				ChatMemory.CONVERSATION_ID,
 				conversationId
 			))
 			.toolContext(Map.of(
-				"currentUserId", currentUserId
+				"currentUserId", currentUserId,
+				"conversationId", conversationId
 			))
 			.user(message)
 			.call()
