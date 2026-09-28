@@ -10,6 +10,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // Spring AI
+    implementation platform('org.springframework.ai:spring-ai-bom:1.1.8')
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
+
     // 테스트 전용
     testRuntimeOnly 'com.h2database:h2'
 
