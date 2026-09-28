@@ -3,7 +3,9 @@ package com.mopl.ai.playlist.controller;
 import com.mopl.ai.playlist.dto.AiPlaylistChatRequest;
 import com.mopl.ai.playlist.dto.AiPlaylistChatResponse;
 import com.mopl.ai.playlist.service.AiPlaylistChatService;
+import com.mopl.auth.dto.AuthUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,9 +17,11 @@ public class AiPlaylistController {
 
 	@PostMapping("/chat")
 	public AiPlaylistChatResponse chat(
+		@AuthenticationPrincipal AuthUser authUser,
 		@RequestBody AiPlaylistChatRequest request
 	) {
 		String message = aiPlaylistChatService.chat(
+			authUser.userId(),
 			request.conversationId(),
 			request.message()
 		);
