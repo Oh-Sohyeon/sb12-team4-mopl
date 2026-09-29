@@ -3,15 +3,14 @@ package com.mopl.infrastructure.watchingsession.repository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mopl.core.domain.watchingsession.model.WatchingSessionState;
-
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
-import java.util.UUID;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Repository
 public class WatchingSessionRedisRepository {
@@ -45,6 +44,11 @@ public class WatchingSessionRedisRepository {
 				session.watcherId().toString(),
 				session.createdAt().toEpochMilli()
 			);
+
+		addSubscription(
+			session.webSocketSessionId(),
+			session.subscriptionId()
+		);
 	}
 
 	public Optional<WatchingSessionState> findByUserId(UUID userId) {
@@ -88,9 +92,41 @@ public class WatchingSessionRedisRepository {
 			.toList();
 	}
 
+	public void addSubscription(
+		String webSocketSessionId,
+		String subscriptionId
+	) {
+		redisTemplate.opsForSet()
+			.add(
+				subscriptionKey(webSocketSessionId),
+				subscriptionId
+			);
+	}
+
+	public boolean removeSubscription(
+		String webSocketSessionId,
+		String subscriptionId
+	) {
+		Long removed = redisTemplate.opsForSet()
+			.remove(
+				subscriptionKey(webSocketSessionId),
+				subscriptionId
+			);
+
+		return removed != null && removed > 0;
+	}
+
+	public boolean hasSubscriptions(String webSocketSessionId) {
+		Long size = redisTemplate.opsForSet()
+			.size(subscriptionKey(webSocketSessionId));
+
+		return size != null && size > 0;
+	}
+
 	public void delete(WatchingSessionState session) {
 		redisTemplate.delete(userKey(session.watcherId()));
 		redisTemplate.delete(webSocketKey(session.webSocketSessionId()));
+		redisTemplate.delete(subscriptionKey(session.webSocketSessionId()));
 
 		redisTemplate.opsForZSet()
 			.remove(
@@ -111,19 +147,32 @@ public class WatchingSessionRedisRepository {
 		return "watch:ws:" + sessionId;
 	}
 
+	private String subscriptionKey(String sessionId) {
+		return "watch:ws-subscriptions:" + sessionId;
+	}
+
 	private String serialize(WatchingSessionState session) {
 		try {
 			return objectMapper.writeValueAsString(session);
 		} catch (JsonProcessingException e) {
-			throw new IllegalStateException("Failed to serialize watching session", e);
+			throw new IllegalStateException(
+				"Failed to serialize watching session",
+				e
+			);
 		}
 	}
 
 	private WatchingSessionState deserialize(String value) {
 		try {
-			return objectMapper.readValue(value, WatchingSessionState.class);
+			return objectMapper.readValue(
+				value,
+				WatchingSessionState.class
+			);
 		} catch (JsonProcessingException e) {
-			throw new IllegalStateException("Failed to deserialize watching session", e);
+			throw new IllegalStateException(
+				"Failed to deserialize watching session",
+				e
+			);
 		}
 	}
 }

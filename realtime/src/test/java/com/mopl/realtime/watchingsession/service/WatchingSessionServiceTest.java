@@ -1,6 +1,7 @@
 package com.mopl.realtime.watchingsession.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -17,6 +18,7 @@ import com.mopl.realtime.watchingsession.dto.WatchingSessionDto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +67,8 @@ class WatchingSessionServiceTest {
 			UUID userId = UUID.randomUUID();
 			UUID contentId = UUID.randomUUID();
 
+			mockValidUserAndContent(userId, contentId);
+
 			when(watchingSessionRepository.findByUserId(userId))
 				.thenReturn(Optional.empty());
 
@@ -97,6 +101,8 @@ class WatchingSessionServiceTest {
 			UUID userId = UUID.randomUUID();
 			UUID contentId = UUID.randomUUID();
 
+			mockValidUserAndContent(userId, contentId);
+
 			WatchingSessionState previous = new WatchingSessionState(
 				UUID.randomUUID(),
 				userId,
@@ -122,6 +128,35 @@ class WatchingSessionServiceTest {
 			verify(watchingSessionRepository)
 				.save(any(WatchingSessionState.class));
 		}
+
+		@Test
+		@DisplayName("존재하지 않는 콘텐츠로 참여하면 기존 시청 세션을 변경하지 않는다")
+		void invalidContent_doesNotChangeExistingSession() {
+			UUID userId = UUID.randomUUID();
+			UUID invalidContentId = UUID.randomUUID();
+
+			when(userRepository.findByIdAndDeletedAtIsNull(userId))
+				.thenReturn(Optional.of(mock(User.class)));
+			when(contentRepository.findByIdAndDeletedAtIsNull(invalidContentId))
+				.thenReturn(Optional.empty());
+
+			assertThatThrownBy(() -> watchingSessionService.join(
+				userId,
+				invalidContentId,
+				"new-ws",
+				"new-sub"
+			)).isInstanceOf(NoSuchElementException.class);
+
+			verifyNoInteractions(watchingSessionRepository);
+		}
+
+		private void mockValidUserAndContent(UUID userId, UUID contentId) {
+			when(userRepository.findByIdAndDeletedAtIsNull(userId))
+				.thenReturn(Optional.of(mock(User.class)));
+
+			when(contentRepository.findByIdAndDeletedAtIsNull(contentId))
+				.thenReturn(Optional.of(mock(Content.class)));
+		}
 	}
 
 	@Nested
@@ -129,12 +164,20 @@ class WatchingSessionServiceTest {
 	class LeaveSubscription {
 
 		@Test
-		@DisplayName("구독 ID가 일치하면 시청 세션을 삭제한다")
+		@DisplayName("마지막 구독을 해제하면 시청 세션을 삭제한다")
 		void matchingSubscription() {
 			WatchingSessionState session = session("sub-1");
 
 			when(watchingSessionRepository.findByWebSocketSessionId("ws-1"))
 				.thenReturn(Optional.of(session));
+
+			when(watchingSessionRepository.removeSubscription(
+				"ws-1",
+				"sub-1"
+			)).thenReturn(true);
+
+			when(watchingSessionRepository.hasSubscriptions("ws-1"))
+				.thenReturn(false);
 
 			Optional<WatchingSessionState> result =
 				watchingSessionService.leaveSubscription(
@@ -143,16 +186,60 @@ class WatchingSessionServiceTest {
 				);
 
 			assertThat(result).contains(session);
+
+			verify(watchingSessionRepository).removeSubscription(
+				"ws-1",
+				"sub-1"
+			);
+			verify(watchingSessionRepository).hasSubscriptions("ws-1");
 			verify(watchingSessionRepository).delete(session);
 		}
 
 		@Test
-		@DisplayName("구독 ID가 일치하지 않으면 시청 세션을 삭제하지 않는다")
+		@DisplayName("다른 구독이 남아 있으면 시청 세션을 삭제하지 않는다")
+		void remainingSubscription() {
+			WatchingSessionState session = session("sub-2");
+
+			when(watchingSessionRepository.findByWebSocketSessionId("ws-1"))
+				.thenReturn(Optional.of(session));
+
+			when(watchingSessionRepository.removeSubscription(
+				"ws-1",
+				"sub-2"
+			)).thenReturn(true);
+
+			when(watchingSessionRepository.hasSubscriptions("ws-1"))
+				.thenReturn(true);
+
+			Optional<WatchingSessionState> result =
+				watchingSessionService.leaveSubscription(
+					"ws-1",
+					"sub-2"
+				);
+
+			assertThat(result).isEmpty();
+
+			verify(watchingSessionRepository).removeSubscription(
+				"ws-1",
+				"sub-2"
+			);
+			verify(watchingSessionRepository).hasSubscriptions("ws-1");
+			verify(watchingSessionRepository, never())
+				.delete(any(WatchingSessionState.class));
+		}
+
+		@Test
+		@DisplayName("등록되지 않은 구독 ID를 해제하면 시청 세션을 삭제하지 않는다")
 		void differentSubscription() {
 			WatchingSessionState session = session("watch-sub");
 
 			when(watchingSessionRepository.findByWebSocketSessionId("ws-1"))
 				.thenReturn(Optional.of(session));
+
+			when(watchingSessionRepository.removeSubscription(
+				"ws-1",
+				"chat-sub"
+			)).thenReturn(false);
 
 			Optional<WatchingSessionState> result =
 				watchingSessionService.leaveSubscription(
@@ -162,6 +249,12 @@ class WatchingSessionServiceTest {
 
 			assertThat(result).isEmpty();
 
+			verify(watchingSessionRepository).removeSubscription(
+				"ws-1",
+				"chat-sub"
+			);
+			verify(watchingSessionRepository, never())
+				.hasSubscriptions(anyString());
 			verify(watchingSessionRepository, never())
 				.delete(any(WatchingSessionState.class));
 		}

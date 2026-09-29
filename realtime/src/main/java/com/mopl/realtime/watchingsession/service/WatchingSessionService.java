@@ -11,7 +11,6 @@ import com.mopl.realtime.contentchat.repository.ContentRepository;
 import com.mopl.realtime.contentchat.repository.UserRepository;
 import com.mopl.realtime.watchingsession.dto.WatchingContentSummary;
 import com.mopl.realtime.watchingsession.dto.WatchingSessionDto;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -37,10 +36,39 @@ public class WatchingSessionService {
 		String webSocketSessionId,
 		String subscriptionId
 	) {
+		userRepository
+			.findByIdAndDeletedAtIsNull(userId)
+			.orElseThrow();
+
+		contentRepository
+			.findByIdAndDeletedAtIsNull(contentId)
+			.orElseThrow();
+
 		Optional<WatchingSessionState> previousSession =
 			watchingSessionRepository.findByUserId(userId);
 
-		previousSession.ifPresent(watchingSessionRepository::delete);
+		if (previousSession.isPresent()) {
+			WatchingSessionState previous = previousSession.get();
+
+			boolean sameWatchingSession =
+				previous.contentId().equals(contentId)
+					&& previous.webSocketSessionId()
+					.equals(webSocketSessionId);
+
+			if (sameWatchingSession) {
+				watchingSessionRepository.addSubscription(
+					webSocketSessionId,
+					subscriptionId
+				);
+
+				return new WatchingSessionJoinResult(
+					previous,
+					Optional.empty()
+				);
+			}
+
+			watchingSessionRepository.delete(previous);
+		}
 
 		WatchingSessionState session = new WatchingSessionState(
 			UUID.randomUUID(),
@@ -61,7 +89,9 @@ public class WatchingSessionService {
 
 	public Optional<WatchingSessionState> leave(String webSocketSessionId) {
 		Optional<WatchingSessionState> session =
-			watchingSessionRepository.findByWebSocketSessionId(webSocketSessionId);
+			watchingSessionRepository.findByWebSocketSessionId(
+				webSocketSessionId
+			);
 
 		session.ifPresent(watchingSessionRepository::delete);
 
@@ -73,17 +103,30 @@ public class WatchingSessionService {
 		String subscriptionId
 	) {
 		Optional<WatchingSessionState> session =
-			watchingSessionRepository.findByWebSocketSessionId(webSocketSessionId);
+			watchingSessionRepository.findByWebSocketSessionId(
+				webSocketSessionId
+			);
 
 		if (session.isEmpty()) {
 			return Optional.empty();
 		}
 
-		WatchingSessionState currentSession = session.get();
+		boolean removed = watchingSessionRepository.removeSubscription(
+			webSocketSessionId,
+			subscriptionId
+		);
 
-		if (!currentSession.subscriptionId().equals(subscriptionId)) {
+		if (!removed) {
 			return Optional.empty();
 		}
+
+		if (watchingSessionRepository.hasSubscriptions(
+			webSocketSessionId
+		)) {
+			return Optional.empty();
+		}
+
+		WatchingSessionState currentSession = session.get();
 
 		watchingSessionRepository.delete(currentSession);
 

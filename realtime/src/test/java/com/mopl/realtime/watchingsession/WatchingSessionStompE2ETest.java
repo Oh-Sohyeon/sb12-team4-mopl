@@ -297,7 +297,8 @@ class WatchingSessionStompE2ETest {
 			);
 
 		// 첫 번째 구독
-		sessionA.subscribe(destination, handler);
+		StompSession.Subscription firstSubscription =
+			sessionA.subscribe(destination, handler);
 
 		JsonNode firstJoinMessage =
 			firstJoin.get(5, TimeUnit.SECONDS);
@@ -308,8 +309,9 @@ class WatchingSessionStompE2ETest {
 		assertThat(firstJoinMessage.path("watcherCount").asLong())
 			.isEqualTo(1);
 
-		// 같은 사용자가 같은 콘텐츠를 다시 구독
-		sessionA.subscribe(destination, handler);
+		// 같은 WebSocket에서 같은 콘텐츠를 두 번째로 구독
+		StompSession.Subscription secondSubscription =
+			sessionA.subscribe(destination, handler);
 
 		JsonNode secondJoinMessage =
 			secondJoin.get(5, TimeUnit.SECONDS);
@@ -320,10 +322,23 @@ class WatchingSessionStompE2ETest {
 		assertThat(secondJoinMessage.path("watcherCount").asLong())
 			.isEqualTo(1);
 
-		// 같은 콘텐츠 재구독이므로 중간에 LEAVE가 발생하면 안 된다.
+		// 같은 콘텐츠 재구독이므로 중간 LEAVE가 발생하면 안 된다.
 		Thread.sleep(1000);
 
 		assertThat(leaveReceived).isNotCompleted();
+
+		// 두 번째 구독만 해제한다.
+		// 첫 번째 구독은 아직 STOMP broker에 남아 있으므로
+		// 시청 세션 전체가 LEAVE 처리되면 안 된다.
+		secondSubscription.unsubscribe();
+
+		Thread.sleep(1000);
+
+		assertThat(leaveReceived)
+			.as("첫 번째 watch 구독이 남아 있으므로 LEAVE가 발생하면 안 됩니다.")
+			.isNotCompleted();
+
+		firstSubscription.unsubscribe();
 
 		sessionA.disconnect();
 		stompClient.stop();
