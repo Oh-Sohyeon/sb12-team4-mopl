@@ -2,10 +2,10 @@ package com.mopl.auth.handler;
 
 import com.mopl.auth.exception.SocialLoginException;
 import com.mopl.auth.jwt.AuthCookieWriter;
-import com.mopl.auth.jwt.JwtTokenProvider;
 import com.mopl.auth.redis.TokenRedisService;
 import com.mopl.auth.service.SocialAuthService;
 import com.mopl.core.common.enums.SocialProvider;
+import com.mopl.infrastructure.security.jwt.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -24,7 +24,7 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Component;
 
 /**
- * 소셜 로그인 성공/실패 처리.
+ * 소셜 로그인(구글) 성공/실패 처리.
  *
  * 일반 로그인(LoginSuccessHandler)은 JSON 으로 응답하지만, 소셜 로그인은 구글에서 브라우저가 우리 콜백 주소로
  * 직접 리다이렉트되어 돌아오는 흐름이라 JSON 응답을 받아줄 곳이 없다. 그래서 성공하면 JWT 쿠키를 심고
@@ -56,7 +56,7 @@ public class OAuth2LoginHandler implements AuthenticationSuccessHandler, Authent
     public void onAuthenticationSuccess(
             HttpServletRequest request, HttpServletResponse response, Authentication authentication
     ) throws IOException {
-        // 지금은 구글만 지원. 카카오는 응답 속성 구조가 달라서 별도 처리가 필요함(후속 이슈)
+        // 지금은 구글만 지원. 카카오는 별도 이슈(#78)에서 응답 파싱을 추가해 확장한다.
         if (!(authentication instanceof OAuth2AuthenticationToken token)
                 || !"google".equals(token.getAuthorizedClientRegistrationId())) {
             redirectWithError(response, "unsupported_provider");
