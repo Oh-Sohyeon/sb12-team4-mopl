@@ -3,6 +3,7 @@ package com.mopl.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,6 +69,14 @@ class SocialAuthServiceTest {
     @Test
     @DisplayName("리뷰 반영: 이미 연동된 계정이라도 이번 로그인의 이메일이 인증되지 않았으면 거절한다")
     void linkedButEmailNotVerifiedThisTime() {
+        // 리뷰 반영(2차): 지금은 이메일 검증이 linked 조회보다 먼저라 이 stub이 실제로는 안 쓰인다.
+        // lenient() 로 "안 쓰여도 에러 내지 말라"고 표시해두고, 나중에 누가 검증 순서를
+        // (linked 먼저 → 이메일 검증) 으로 되돌리는 회귀가 생기면 이 stub이 실제로 쓰이면서
+        // 로그인이 성공해버려 테스트가 실패로 잡아낸다.
+        User user = userWithId("linked2@mopl.com");
+        lenient().when(socialAccountRepository.findByProviderAndProviderId(GOOGLE, "sub-10"))
+                .thenReturn(Optional.of(new SocialAccount(user, GOOGLE, "sub-10")));
+
         assertRejectedWith(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED,
                 () -> socialAuthService.loginOrRegister(GOOGLE, "sub-10", "linked2@mopl.com", false, "홍길동", null));
     }
