@@ -8,6 +8,7 @@ import org.springframework.ai.chat.messages.Message;
 import com.mopl.core.common.enums.PlaylistAiMessageRole;
 import com.mopl.core.domain.playlist.entity.PlaylistAiSession;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -18,6 +19,11 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+// OpenAI API Key가 있을 때만 AI Playlist 채팅 서비스를 활성화
+@ConditionalOnProperty(
+	name = "mopl.ai.enabled",
+	havingValue = "true"
+)
 public class AiPlaylistChatService {
 
 	private final ChatClient aiPlaylistChatClient;

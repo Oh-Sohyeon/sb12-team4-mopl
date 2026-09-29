@@ -11,6 +11,8 @@ import com.mopl.playlist.ai.service.PlaylistAiMessageService;
 import com.mopl.playlist.ai.service.PlaylistAiSessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,6 +22,11 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/ai/playlists")
+// OpenAI API Key가 있을 때만 AI Playlist API를 활성화
+@ConditionalOnProperty(
+	name = "mopl.ai.enabled",
+	havingValue = "true"
+)
 public class AiPlaylistController {
 
 	private final AiPlaylistChatService aiPlaylistChatService;
