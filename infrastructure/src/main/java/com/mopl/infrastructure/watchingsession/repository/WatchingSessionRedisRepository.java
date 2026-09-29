@@ -123,6 +123,17 @@ public class WatchingSessionRedisRepository {
 		return size != null && size > 0;
 	}
 
+	public Set<String> findSubscriptionIds(String webSocketSessionId) {
+		Set<String> subscriptionIds = redisTemplate.opsForSet()
+			.members(subscriptionKey(webSocketSessionId));
+
+		if (subscriptionIds == null || subscriptionIds.isEmpty()) {
+			return Set.of();
+		}
+
+		return Set.copyOf(subscriptionIds);
+	}
+
 	public void delete(WatchingSessionState session) {
 		redisTemplate.delete(userKey(session.watcherId()));
 		redisTemplate.delete(webSocketKey(session.webSocketSessionId()));

@@ -14,6 +14,7 @@ import com.mopl.realtime.watchingsession.dto.WatchingSessionDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Set;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,6 +48,8 @@ public class WatchingSessionService {
 		Optional<WatchingSessionState> previousSession =
 			watchingSessionRepository.findByUserId(userId);
 
+		Set<String> leftSubscriptionIds = Set.of();
+
 		if (previousSession.isPresent()) {
 			WatchingSessionState previous = previousSession.get();
 
@@ -63,9 +66,15 @@ public class WatchingSessionService {
 
 				return new WatchingSessionJoinResult(
 					previous,
-					Optional.empty()
+					Optional.empty(),
+					Set.of()
 				);
 			}
+
+			leftSubscriptionIds =
+				watchingSessionRepository.findSubscriptionIds(
+					previous.webSocketSessionId()
+				);
 
 			watchingSessionRepository.delete(previous);
 		}
@@ -83,7 +92,8 @@ public class WatchingSessionService {
 
 		return new WatchingSessionJoinResult(
 			session,
-			previousSession
+			previousSession,
+			leftSubscriptionIds
 		);
 	}
 

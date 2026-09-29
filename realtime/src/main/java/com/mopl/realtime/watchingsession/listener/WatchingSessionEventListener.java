@@ -6,7 +6,7 @@ import com.mopl.realtime.watchingsession.dto.WatchingSessionChange;
 import com.mopl.realtime.watchingsession.dto.WatchingSessionDto;
 import com.mopl.realtime.watchingsession.service.WatchingSessionJoinResult;
 import com.mopl.realtime.watchingsession.service.WatchingSessionService;
-import lombok.RequiredArgsConstructor;
+import com.mopl.realtime.watchingsession.service.WatchingSubscriptionBroker;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
@@ -21,7 +21,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
-@RequiredArgsConstructor
 public class WatchingSessionEventListener {
 
 	private static final Pattern WATCH_DESTINATION_PATTERN =
@@ -29,6 +28,17 @@ public class WatchingSessionEventListener {
 
 	private final WatchingSessionService watchingSessionService;
 	private final SimpMessagingTemplate messagingTemplate;
+	private final WatchingSubscriptionBroker watchingSubscriptionBroker;
+
+	public WatchingSessionEventListener(
+		WatchingSessionService watchingSessionService,
+		SimpMessagingTemplate messagingTemplate,
+		WatchingSubscriptionBroker watchingSubscriptionBroker
+	) {
+		this.watchingSessionService = watchingSessionService;
+		this.messagingTemplate = messagingTemplate;
+		this.watchingSubscriptionBroker = watchingSubscriptionBroker;
+	}
 
 	@EventListener
 	public void handleSubscribe(SessionSubscribeEvent event) {
@@ -66,11 +76,19 @@ public class WatchingSessionEventListener {
 		result.leftSession()
 			.filter(previousSession ->
 				!previousSession.contentId().equals(contentId))
-			.ifPresent(this::broadcastLeave);
+			.ifPresent(previousSession -> {
+				watchingSubscriptionBroker.unsubscribeAll(
+					previousSession.webSocketSessionId(),
+					result.leftSubscriptionIds()
+				);
+
+				broadcastLeave(previousSession);
+			});
 
 		WatchingSessionState session = result.joinedSession();
 
-		WatchingSessionDto watchingSession = watchingSessionService.toDto(session);
+		WatchingSessionDto watchingSession =
+			watchingSessionService.toDto(session);
 
 		long watcherCount = watchingSessionService.count(contentId);
 
@@ -113,9 +131,11 @@ public class WatchingSessionEventListener {
 	}
 
 	private void broadcastLeave(WatchingSessionState session) {
-		WatchingSessionDto watchingSession = watchingSessionService.toDto(session);
+		WatchingSessionDto watchingSession =
+			watchingSessionService.toDto(session);
 
-		long watcherCount = watchingSessionService.count(session.contentId());
+		long watcherCount =
+			watchingSessionService.count(session.contentId());
 
 		WatchingSessionChange change = new WatchingSessionChange(
 			ChangeType.LEAVE,

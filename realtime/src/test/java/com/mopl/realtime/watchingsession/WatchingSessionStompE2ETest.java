@@ -430,7 +430,8 @@ class WatchingSessionStompE2ETest {
 	}
 
 	@Test
-	void sameUserSubscribesDifferentContent_replacesPreviousWatchingSession() throws Exception {
+	void sameUserSubscribesDifferentContent_replacesPreviousWatchingSession()
+		throws Exception {
 		String tokenA = System.getenv("E2E_TOKEN_A");
 		String tokenB = System.getenv("E2E_TOKEN_B");
 
@@ -467,21 +468,45 @@ class WatchingSessionStompE2ETest {
 		CompletableFuture<JsonNode> content2Join =
 			new CompletableFuture<>();
 
-		// B는 content1에 남아서 A의 JOIN과 LEAVE를 관찰한다.
-		sessionB.subscribe(
-			content1Destination,
-			contentChangeObserver(
-				content1Join,
-				content1Leave
-			)
-		);
+		CompletableFuture<JsonNode> staleContent1Event =
+			new CompletableFuture<>();
+
+		StompSession.Subscription content1SubscriptionB =
+			sessionB.subscribe(
+				content1Destination,
+				contentChangeObserver(
+					content1Join,
+					content1Leave
+				)
+			);
 
 		Thread.sleep(500);
 
-		// A가 content1에 입장한다.
 		sessionA.subscribe(
 			content1Destination,
-			jsonFrameHandler()
+			new StompFrameHandler() {
+				@Override
+				public @NonNull Type getPayloadType(
+					@NonNull StompHeaders headers
+				) {
+					return JsonNode.class;
+				}
+
+				@Override
+				public void handleFrame(
+					@NonNull StompHeaders headers,
+					Object payload
+				) {
+					JsonNode message = (JsonNode) payload;
+
+					if ("LEAVE".equals(
+						message.path("type").asText()
+					)
+						&& message.path("watcherCount").asLong() == 0) {
+						staleContent1Event.complete(message);
+					}
+				}
+			}
 		);
 
 		JsonNode firstJoinMessage =
@@ -493,13 +518,11 @@ class WatchingSessionStompE2ETest {
 		assertThat(firstJoinMessage.path("watcherCount").asLong())
 			.isEqualTo(2);
 
-		// content1을 UNSUBSCRIBE하지 않고 content2를 먼저 구독한다.
 		sessionA.subscribe(
 			content2Destination,
 			joinObserver(content2Join)
 		);
 
-		// 기존 content1 세션은 자동으로 제거되어야 한다.
 		JsonNode leaveMessage =
 			content1Leave.get(5, TimeUnit.SECONDS);
 
@@ -509,7 +532,6 @@ class WatchingSessionStompE2ETest {
 		assertThat(leaveMessage.path("watcherCount").asLong())
 			.isEqualTo(1);
 
-		// 새로운 content2 세션은 정상적으로 생성되어야 한다.
 		JsonNode secondJoinMessage =
 			content2Join.get(5, TimeUnit.SECONDS);
 
@@ -518,6 +540,17 @@ class WatchingSessionStompE2ETest {
 
 		assertThat(secondJoinMessage.path("watcherCount").asLong())
 			.isEqualTo(1);
+
+		content1SubscriptionB.unsubscribe();
+
+		Thread.sleep(1000);
+
+		assertThat(staleContent1Event)
+			.as(
+				"content2로 전환한 사용자는 "
+					+ "이전 content1 이벤트를 받으면 안 됩니다."
+			)
+			.isNotCompleted();
 
 		sessionA.disconnect();
 		sessionB.disconnect();

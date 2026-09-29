@@ -8,10 +8,12 @@ import com.mopl.realtime.watchingsession.dto.WatchingSessionChange;
 import com.mopl.realtime.watchingsession.dto.WatchingSessionDto;
 import com.mopl.realtime.watchingsession.service.WatchingSessionJoinResult;
 import com.mopl.realtime.watchingsession.service.WatchingSessionService;
+import com.mopl.realtime.watchingsession.service.WatchingSubscriptionBroker;
 import java.security.Principal;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -39,6 +41,9 @@ class WatchingSessionEventListenerTest {
 	private SimpMessagingTemplate messagingTemplate;
 
 	@Mock
+	private WatchingSubscriptionBroker watchingSubscriptionBroker;
+
+	@Mock
 	private Principal principal;
 
 	private WatchingSessionEventListener listener;
@@ -47,7 +52,8 @@ class WatchingSessionEventListenerTest {
 	void setUp() {
 		listener = new WatchingSessionEventListener(
 			watchingSessionService,
-			messagingTemplate
+			messagingTemplate,
+			watchingSubscriptionBroker
 		);
 	}
 
@@ -97,7 +103,8 @@ class WatchingSessionEventListenerTest {
 			)).thenReturn(
 				new WatchingSessionJoinResult(
 					session,
-					Optional.empty()
+					Optional.empty(),
+					Set.of()
 				)
 			);
 
@@ -210,7 +217,8 @@ class WatchingSessionEventListenerTest {
 			)).thenReturn(
 				new WatchingSessionJoinResult(
 					newSession,
-					Optional.of(previousSession)
+					Optional.of(previousSession),
+					Set.of("old-sub")
 				)
 			);
 
@@ -228,6 +236,11 @@ class WatchingSessionEventListenerTest {
 
 			listener.handleSubscribe(
 				new SessionSubscribeEvent(this, message)
+			);
+
+			verify(watchingSubscriptionBroker).unsubscribeAll(
+				"old-ws",
+				Set.of("old-sub")
 			);
 
 			verify(messagingTemplate).convertAndSend(
@@ -300,7 +313,8 @@ class WatchingSessionEventListenerTest {
 			)).thenReturn(
 				new WatchingSessionJoinResult(
 					newSession,
-					Optional.of(previousSession)
+					Optional.of(previousSession),
+					Set.of()
 				)
 			);
 
@@ -313,6 +327,9 @@ class WatchingSessionEventListenerTest {
 			listener.handleSubscribe(
 				new SessionSubscribeEvent(this, message)
 			);
+
+			verify(watchingSubscriptionBroker, never())
+				.unsubscribeAll(anyString(), anySet());
 
 			verify(messagingTemplate).convertAndSend(
 				"/sub/contents/" + contentId + "/watch",
