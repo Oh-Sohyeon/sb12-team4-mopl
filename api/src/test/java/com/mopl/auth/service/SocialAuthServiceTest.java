@@ -66,6 +66,13 @@ class SocialAuthServiceTest {
     }
 
     @Test
+    @DisplayName("리뷰 반영: 이미 연동된 계정이라도 이번 로그인의 이메일이 인증되지 않았으면 거절한다")
+    void linkedButEmailNotVerifiedThisTime() {
+        assertRejectedWith(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED,
+                () -> socialAuthService.loginOrRegister(GOOGLE, "sub-10", "linked2@mopl.com", false, "홍길동", null));
+    }
+
+    @Test
     @DisplayName("연동된 계정이 잠겨 있으면 USER_LOCKED 로 거절한다")
     void linkedButLocked() {
         User user = userWithId("locked@mopl.com");
@@ -113,8 +120,6 @@ class SocialAuthServiceTest {
     @Test
     @DisplayName("구글이 이메일 소유를 확인해주지 않은 계정은 SOCIAL_EMAIL_NOT_VERIFIED 로 거절한다")
     void emailNotVerified() {
-        when(socialAccountRepository.findByProviderAndProviderId(GOOGLE, "sub-5")).thenReturn(Optional.empty());
-
         assertRejectedWith(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED,
                 () -> socialAuthService.loginOrRegister(GOOGLE, "sub-5", "unverified@mopl.com", false, "홍길동", null));
 
@@ -124,8 +129,6 @@ class SocialAuthServiceTest {
     @Test
     @DisplayName("이메일이 없는 소셜 계정은 SOCIAL_EMAIL_NOT_VERIFIED 로 거절한다")
     void missingEmail() {
-        when(socialAccountRepository.findByProviderAndProviderId(GOOGLE, "sub-6")).thenReturn(Optional.empty());
-
         assertRejectedWith(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED,
                 () -> socialAuthService.loginOrRegister(GOOGLE, "sub-6", null, true, "홍길동", null));
     }

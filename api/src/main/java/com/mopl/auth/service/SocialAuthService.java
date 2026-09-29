@@ -43,6 +43,12 @@ public class SocialAuthService {
             SocialProvider provider, String providerId, String email, boolean emailVerified,
             String name, String pictureUrl
     ) {
+        // 리뷰 반영: 이메일 소유가 확인되지 않은 소셜 계정은 이미 연동된 계정이라도 로그인을 거절한다.
+        // (이전에는 linked 분기가 먼저 반환돼서 이미 연동된 계정은 이 검증을 건너뛰는 문제가 있었음)
+        if (email == null || email.isBlank() || !emailVerified) {
+            throw new SocialLoginException(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED);
+        }
+
         Optional<SocialAccount> linked = socialAccountRepository.findByProviderAndProviderId(provider, providerId);
         if (linked.isPresent()) {
             User user = linked.get().getUser();
@@ -55,10 +61,6 @@ public class SocialAuthService {
             return new SocialLoginResult(user.getId(), user.getEmail(), user.getRole());
         }
 
-        // 이메일 소유가 확인되지 않은 소셜 계정으로는 가입/판단하지 않는다
-        if (email == null || email.isBlank() || !emailVerified) {
-            throw new SocialLoginException(UserErrorCode.SOCIAL_EMAIL_NOT_VERIFIED);
-        }
         if (userRepository.existsByEmailAndDeletedAtIsNull(email)) {
             throw new SocialLoginException(UserErrorCode.SOCIAL_EMAIL_ALREADY_REGISTERED);
         }
