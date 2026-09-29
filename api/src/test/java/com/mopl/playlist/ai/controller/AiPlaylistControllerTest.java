@@ -39,7 +39,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(AiPlaylistController.class)
+@WebMvcTest(
+	controllers = AiPlaylistController.class,
+	properties = "mopl.ai.enabled=true"
+)
 @AutoConfigureMockMvc(addFilters = false)
 class AiPlaylistControllerTest {
 
@@ -279,4 +282,23 @@ class AiPlaylistControllerTest {
 			request.message()
 		);
 	}
+	@Test
+	@DisplayName("메시지가 1000자를 초과하면 400을 반환한다")
+	void chatFailsWhenMessageExceedsMaxLength() throws Exception {
+		UUID sessionId = UUID.randomUUID();
+
+		AiPlaylistChatRequest request =
+			new AiPlaylistChatRequest("a".repeat(1001));
+
+		mockMvc.perform(post(
+				"/api/ai/playlists/sessions/{sessionId}/messages",
+				sessionId
+			)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(objectMapper.writeValueAsString(request)))
+			.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(aiPlaylistChatService);
+	}
+
 }
