@@ -1,10 +1,11 @@
-package com.mopl.ai.playlist.tool;
+package com.mopl.playlist.ai.tool;
 
-import com.mopl.ai.playlist.service.AiPlaylistCandidateStore;
+import com.mopl.playlist.ai.service.AiPlaylistCandidateStore;
 import com.mopl.content.search.condition.SemanticCandidateCondition;
 import com.mopl.content.search.dto.ContentCandidate;
 import com.mopl.content.search.service.SemanticCandidateSearchService;
 import com.mopl.core.common.enums.ContentType;
+import com.mopl.playlist.ai.tool.AiPlaylistTools;
 import com.mopl.playlist.dto.PlaylistCreateRequest;
 import com.mopl.playlist.dto.PlaylistResponse;
 import com.mopl.playlist.service.PlaylistService;
@@ -48,11 +49,11 @@ class AiPlaylistToolsTest {
 	void createPlaylistWithUnknownContentFails() {
 		UUID currentUserId = UUID.randomUUID();
 		UUID unknownContentId = UUID.randomUUID();
-		String conversationId = "test-conversation";
+		String sessionId = "test-session";
 
 		ToolContext toolContext = new ToolContext(Map.of(
 			"currentUserId", currentUserId,
-			"conversationId", conversationId
+			"sessionId", sessionId
 		));
 
 		assertThrows(
@@ -73,14 +74,14 @@ class AiPlaylistToolsTest {
 	void createPlaylistWithCandidateContentSucceeds() {
 		UUID currentUserId = UUID.randomUUID();
 		UUID contentId = UUID.randomUUID();
-		UUID playlistId = UUID.randomUUID();
-		String conversationId = "test-conversation";
+		String sessionId = "test-session";
 
 		AiPlaylistCandidateStore candidateStore =
 			new AiPlaylistCandidateStore();
 
 		candidateStore.saveCandidates(
-			conversationId,
+			currentUserId,
+			sessionId,
 			Set.of(contentId)
 		);
 
@@ -92,20 +93,15 @@ class AiPlaylistToolsTest {
 
 		ToolContext toolContext = new ToolContext(Map.of(
 			"currentUserId", currentUserId,
-			"conversationId", conversationId
+			"sessionId", sessionId
 		));
 
 		PlaylistResponse playlistResponse = mock(PlaylistResponse.class);
 
-		when(playlistResponse.id()).thenReturn(playlistId);
-		when(playlistService.createPlaylist(
+		when(playlistService.createPlaylistWithContents(
 			eq(currentUserId),
-			any(PlaylistCreateRequest.class)
-		)).thenReturn(playlistResponse);
-
-		when(playlistService.getPlaylist(
-			playlistId,
-			currentUserId
+			any(PlaylistCreateRequest.class),
+			eq(List.of(contentId))
 		)).thenReturn(playlistResponse);
 
 		tools.createPlaylist(
@@ -115,28 +111,19 @@ class AiPlaylistToolsTest {
 			toolContext
 		);
 
-		verify(playlistService).createPlaylist(
+		verify(playlistService).createPlaylistWithContents(
 			eq(currentUserId),
-			any(PlaylistCreateRequest.class)
-		);
-
-		verify(playlistService).addContentToPlaylist(
-			currentUserId,
-			playlistId,
-			contentId
-		);
-
-		verify(playlistService).getPlaylist(
-			playlistId,
-			currentUserId
+			any(PlaylistCreateRequest.class),
+			eq(List.of(contentId))
 		);
 	}
 
 	@Test
-	@DisplayName("콘텐츠를 검색하면 검색 결과의 ID를 대화별 후보로 저장한다")
-	void searchContentsSavesCandidatesByConversation() {
+	@DisplayName("콘텐츠를 검색하면 검색 결과의 ID를 세션별 후보로 저장한다")
+	void searchContentsSavesCandidatesBySession() {
 		UUID contentId = UUID.randomUUID();
-		String conversationId = "test-conversation";
+		UUID currentUserId = UUID.randomUUID();
+		String sessionId = "test-session";
 
 		ContentCandidate candidate = mock(ContentCandidate.class);
 		when(candidate.contentId()).thenReturn(contentId);
@@ -160,9 +147,9 @@ class AiPlaylistToolsTest {
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
-			"conversationId", conversationId
+			"currentUserId", currentUserId,
+			"sessionId", sessionId
 		));
-
 		List<ContentCandidate> result = tools.searchContents(
 			"주말에 볼 영화",
 			ContentType.MOVIE,
@@ -171,7 +158,8 @@ class AiPlaylistToolsTest {
 
 		assertEquals(List.of(candidate), result);
 		assertTrue(candidateStore.containsAll(
-			conversationId,
+			currentUserId,
+			sessionId,
 			Set.of(contentId)
 		));
 
@@ -186,17 +174,18 @@ class AiPlaylistToolsTest {
 	@DisplayName("콘텐츠가 없으면 플레이리스트를 생성하지 않는다")
 	void createPlaylistWithEmptyContentsFails() {
 		UUID currentUserId = UUID.randomUUID();
-		String conversationId = "test-conversation";
+		String sessionId = "test-session";
 
 		// 검색을 한 상태를 먼저 만든다.
 		candidateStore.saveCandidates(
-			conversationId,
+			currentUserId,
+			sessionId,
 			Set.of(UUID.randomUUID())
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
 			"currentUserId", currentUserId,
-			"conversationId", conversationId
+			"sessionId", sessionId
 		));
 
 		assertThrows(

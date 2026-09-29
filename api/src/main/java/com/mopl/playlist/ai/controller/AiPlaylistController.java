@@ -1,0 +1,94 @@
+package com.mopl.playlist.ai.controller;
+
+import com.mopl.auth.dto.AuthUser;
+import com.mopl.core.common.dto.CursorResponse;
+import com.mopl.playlist.ai.dto.AiPlaylistChatRequest;
+import com.mopl.playlist.ai.dto.AiPlaylistChatResponse;
+import com.mopl.playlist.ai.dto.AiPlaylistMessageResponse;
+import com.mopl.playlist.ai.dto.AiPlaylistSessionResponse;
+import com.mopl.playlist.ai.service.AiPlaylistChatService;
+import com.mopl.playlist.ai.service.PlaylistAiMessageService;
+import com.mopl.playlist.ai.service.PlaylistAiSessionService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/ai/playlists")
+public class AiPlaylistController {
+
+	private final AiPlaylistChatService aiPlaylistChatService;
+	private final PlaylistAiSessionService playlistAiSessionService;
+	private final PlaylistAiMessageService playlistAiMessageService;
+
+	@PostMapping("/sessions")
+	public UUID createSession(
+		@AuthenticationPrincipal AuthUser authUser
+	) {
+		return playlistAiSessionService
+			.createSession(authUser.userId(), null)
+			.getId();
+	}
+
+	@GetMapping("/sessions")
+	public List<AiPlaylistSessionResponse> getSessions(
+		@AuthenticationPrincipal AuthUser authUser
+	) {
+		return playlistAiSessionService.getSessions(authUser.userId())
+			.stream()
+			.map(session -> new AiPlaylistSessionResponse(
+				session.getId(),
+				session.getTitle(),
+				session.getCreatedAt(),
+				session.getUpdatedAt()
+			))
+			.toList();
+	}
+
+	@GetMapping("/sessions/{sessionId}/messages")
+	public CursorResponse<AiPlaylistMessageResponse> getMessages(
+		@AuthenticationPrincipal AuthUser authUser,
+		@PathVariable UUID sessionId,
+		@RequestParam(required = false) String cursor,
+		@RequestParam(required = false) String idAfter,
+		@RequestParam(defaultValue = "20") int limit,
+		@RequestParam(defaultValue = "DESCENDING")
+		String sortDirection
+	) {
+		playlistAiSessionService.getSession(
+			sessionId,
+			authUser.userId()
+		);
+
+		return playlistAiMessageService.getMessages(
+			sessionId,
+			cursor,
+			idAfter,
+			limit,
+			sortDirection
+		);
+	}
+
+	@PostMapping("/sessions/{sessionId}/messages")
+	public AiPlaylistChatResponse chat(
+		@AuthenticationPrincipal AuthUser authUser,
+		@PathVariable UUID sessionId,
+		@RequestBody @Valid AiPlaylistChatRequest request
+	) {
+		String message = aiPlaylistChatService.chat(
+			authUser.userId(),
+			sessionId,
+			request.message()
+		);
+
+		return new AiPlaylistChatResponse(
+			sessionId,
+			message
+		);
+	}
+}

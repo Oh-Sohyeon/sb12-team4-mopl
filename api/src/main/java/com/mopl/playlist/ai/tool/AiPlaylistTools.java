@@ -1,11 +1,11 @@
-package com.mopl.ai.playlist.tool;
+package com.mopl.playlist.ai.tool;
 
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.stereotype.Component;
 import org.springframework.ai.tool.annotation.Tool;
 
-import com.mopl.ai.playlist.service.AiPlaylistCandidateStore;
+import com.mopl.playlist.ai.service.AiPlaylistCandidateStore;
 import com.mopl.playlist.dto.PlaylistCreateRequest;
 import com.mopl.playlist.dto.PlaylistResponse;
 import com.mopl.playlist.service.PlaylistService;
@@ -48,11 +48,15 @@ public class AiPlaylistTools {
 			10
 		);
 
-		String conversationId =
-			(String) toolContext.getContext().get("conversationId");
+		UUID currentUserId =
+			(UUID) toolContext.getContext().get("currentUserId");
+
+		String sessionId =
+			(String) toolContext.getContext().get("sessionId");
 
 		aiPlaylistCandidateStore.saveCandidates(
-			conversationId,
+			currentUserId,
+			sessionId,
 			candidates.stream()
 				.map(ContentCandidate::contentId)
 				.collect(java.util.stream.Collectors.toSet())
@@ -65,6 +69,11 @@ public class AiPlaylistTools {
 	사용자가 현재 대화에서 구성한 콘텐츠들로
 	플레이리스트를 실제로 생성해 달라고 명확하게 요청했을 때 사용합니다.
 	사용자의 명확한 생성 요청이 있기 전에는 호출하지 마세요.
+	
+	플레이리스트를 생성하기 전에 사용할 콘텐츠가
+	searchContents를 통해 실제 MOPL 콘텐츠인지 확인되어 있어야 합니다.
+	현재 검색 후보가 확인되지 않은 경우에는
+	searchContents를 다시 호출하여 콘텐츠를 확인한 후 이 도구를 호출하세요.
 	
 	contentIds에는 콘텐츠 제목이 아니라
 	searchContents 결과의 contentId UUID 값을 반드시 전달하세요.
@@ -85,12 +94,13 @@ public class AiPlaylistTools {
 		UUID currentUserId =
 			(UUID) toolContext.getContext().get("currentUserId");
 
-		String conversationId =
-			(String) toolContext.getContext().get("conversationId");
+		String sessionId =
+			(String) toolContext.getContext().get("sessionId");
 
 
 		if (!aiPlaylistCandidateStore.containsAll(
-			conversationId,
+			currentUserId,
+			sessionId,
 			Set.copyOf(contentIds)
 		)) {
 			throw new IllegalArgumentException(
@@ -98,22 +108,10 @@ public class AiPlaylistTools {
 			);
 		}
 
-		PlaylistResponse playlist = playlistService.createPlaylist(
+		return playlistService.createPlaylistWithContents(
 			currentUserId,
-			new PlaylistCreateRequest(title, description)
-		);
-
-		for (UUID contentId : contentIds) {
-			playlistService.addContentToPlaylist(
-				currentUserId,
-				playlist.id(),
-				contentId
-			);
-		}
-
-		return playlistService.getPlaylist(
-			playlist.id(),
-			currentUserId
+			new PlaylistCreateRequest(title, description),
+			contentIds
 		);
 	}
 }

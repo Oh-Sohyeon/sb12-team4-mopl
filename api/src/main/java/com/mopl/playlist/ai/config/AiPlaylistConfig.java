@@ -1,12 +1,12 @@
-package com.mopl.ai.playlist.config;
+package com.mopl.playlist.ai.config;
 
+import com.mopl.playlist.ai.tool.AiPlaylistTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import com.mopl.ai.playlist.tool.AiPlaylistTools;
 
 @Configuration
 public class AiPlaylistConfig {
@@ -31,5 +31,12 @@ public class AiPlaylistConfig {
 			)
 			.defaultTools(aiPlaylistTools)
 			.build();
+	}
+
+	@Bean
+	public ChatClient aiPlaylistTitleChatClient(
+		ChatClient.Builder chatClientBuilder
+	) {
+		return chatClientBuilder.build();
 	}
 }

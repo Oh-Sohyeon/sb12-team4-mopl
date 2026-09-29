@@ -7,6 +7,7 @@ import com.mopl.common.exception.playlist.PlaylistAccessDeniedException;
 import com.mopl.common.exception.playlist.PlaylistContentAlreadyExistsException;
 import com.mopl.common.exception.playlist.PlaylistContentNotFoundException;
 import com.mopl.common.exception.playlist.PlaylistNotFoundException;
+import com.mopl.common.exception.user.UserErrorCode;
 import com.mopl.content.repository.ContentRepository;
 import com.mopl.core.domain.content.entity.Content;
 import com.mopl.core.domain.playlist.entity.Playlist;
@@ -147,14 +148,38 @@ public class PlaylistService {
 	) {
 		User owner = entityManager.find(User.class, currentUserId);
 		if (owner == null) {
-			// TODO: User 도메인 예외 체계(UserErrorCode.USER_NOT_FOUND 등) 생기면 교체 예정
-			throw new MoplException(CommonErrorCode.INVALID_INPUT_VALUE);
+			throw new MoplException(UserErrorCode.USER_NOT_FOUND);
 		}
 
 		Playlist playlist = new Playlist(owner, request.title(), request.description());
 		Playlist saved = playlistRepository.save(playlist);
 
 		return PlaylistResponse.from(saved);
+	}
+
+	@Transactional
+	public PlaylistResponse createPlaylistWithContents(
+		UUID currentUserId,
+		PlaylistCreateRequest request,
+		List<UUID> contentIds
+	) {
+		PlaylistResponse playlist = createPlaylist(
+			currentUserId,
+			request
+		);
+
+		for (UUID contentId : contentIds) {
+			addContentToPlaylist(
+				currentUserId,
+				playlist.id(),
+				contentId
+			);
+		}
+
+		return getPlaylist(
+			playlist.id(),
+			currentUserId
+		);
 	}
 
 	@Transactional
