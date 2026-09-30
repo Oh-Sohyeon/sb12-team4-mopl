@@ -6,6 +6,7 @@ import com.mopl.core.domain.playlist.entity.PlaylistAiSession;
 import com.mopl.core.domain.user.entity.User;
 import com.mopl.playlist.ai.repository.PlaylistAiSessionRepository;
 import com.mopl.user.repository.UserRepository;
+import com.mopl.common.exception.playlist.PlaylistAiSessionNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,9 +34,7 @@ public class PlaylistAiSessionService {
 		UUID userId
 	) {
 		return sessionRepository.findByIdAndUser_Id(sessionId, userId)
-			.orElseThrow(() -> new IllegalArgumentException(
-				"AI Playlist 채팅방을 찾을 수 없습니다."
-			));
+			.orElseThrow(PlaylistAiSessionNotFoundException::new);
 	}
 
 	public List<PlaylistAiSession> getSessions(UUID userId) {

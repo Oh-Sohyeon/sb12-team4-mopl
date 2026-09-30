@@ -1,5 +1,6 @@
 package com.mopl.playlist.service;
 
+import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.content.ContentNotFoundException;
 import com.mopl.core.common.enums.ContentType;
 import com.mopl.core.common.enums.ExternalSource;
@@ -13,6 +14,8 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +58,12 @@ class PlaylistServiceTransactionTest {
 		@Bean
 		JPAQueryFactory jpaQueryFactory() {
 			return new JPAQueryFactory(entityManager);
+		}
+
+		@Bean
+		Validator validator() {
+			return Validation.buildDefaultValidatorFactory()
+				.getValidator();
 		}
 	}
 
@@ -142,5 +151,20 @@ class PlaylistServiceTransactionTest {
 
 		assertThat(playlistContentRepository.count())
 			.isEqualTo(playlistContentCountBefore);
+	}
+
+	@Test
+	@DisplayName("AI 생성 경로에서도 잘못된 플레이리스트 생성 요청은 검증된다")
+	void createPlaylistWithContentsValidatesCreateRequest() {
+		PlaylistCreateRequest invalidRequest =
+			new PlaylistCreateRequest("", "테스트 설명");
+
+		assertThatThrownBy(() ->
+			playlistService.createPlaylistWithContents(
+				UUID.randomUUID(),
+				invalidRequest,
+				List.of(UUID.randomUUID())
+			)
+		).isInstanceOf(MoplException.class);
 	}
 }

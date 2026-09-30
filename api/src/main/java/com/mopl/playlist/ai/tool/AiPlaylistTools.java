@@ -5,6 +5,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.ai.tool.annotation.Tool;
 
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.MoplException;
+import com.mopl.common.exception.playlist.PlaylistAiContentNotSearchedException;
 import com.mopl.playlist.ai.service.AiPlaylistCandidateStore;
 import com.mopl.playlist.dto.PlaylistCreateRequest;
 import com.mopl.playlist.dto.PlaylistResponse;
@@ -86,7 +89,8 @@ public class AiPlaylistTools {
 		ToolContext toolContext
 	) {
 		if (contentIds == null || contentIds.isEmpty()) {
-			throw new IllegalArgumentException(
+			throw new MoplException(
+				CommonErrorCode.INVALID_INPUT_VALUE,
 				"플레이리스트에는 하나 이상의 콘텐츠가 필요합니다."
 			);
 		}
@@ -97,15 +101,12 @@ public class AiPlaylistTools {
 		String sessionId =
 			(String) toolContext.getContext().get("sessionId");
 
-
 		if (!aiPlaylistCandidateStore.containsAll(
 			currentUserId,
 			sessionId,
 			Set.copyOf(contentIds)
 		)) {
-			throw new IllegalArgumentException(
-				"검색 결과에 포함되지 않은 콘텐츠는 플레이리스트에 추가할 수 없습니다."
-			);
+			throw new PlaylistAiContentNotSearchedException();
 		}
 
 		return playlistService.createPlaylistWithContents(

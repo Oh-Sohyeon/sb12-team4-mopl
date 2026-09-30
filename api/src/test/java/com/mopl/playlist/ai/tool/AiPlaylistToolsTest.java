@@ -5,7 +5,6 @@ import com.mopl.content.search.condition.SemanticCandidateCondition;
 import com.mopl.content.search.dto.ContentCandidate;
 import com.mopl.content.search.service.SemanticCandidateSearchService;
 import com.mopl.core.common.enums.ContentType;
-import com.mopl.playlist.ai.tool.AiPlaylistTools;
 import com.mopl.playlist.dto.PlaylistCreateRequest;
 import com.mopl.playlist.dto.PlaylistResponse;
 import com.mopl.playlist.service.PlaylistService;
@@ -13,6 +12,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
+import com.mopl.common.exception.MoplException;
+import com.mopl.common.exception.CommonErrorCode;
+import com.mopl.common.exception.playlist.PlaylistAiContentNotSearchedException;
 
 import java.util.List;
 import java.util.Map;
@@ -57,7 +59,7 @@ class AiPlaylistToolsTest {
 		));
 
 		assertThrows(
-			IllegalArgumentException.class,
+			PlaylistAiContentNotSearchedException.class,
 			() -> aiPlaylistTools.createPlaylist(
 				"테스트 플레이리스트",
 				"테스트 설명",
@@ -188,14 +190,19 @@ class AiPlaylistToolsTest {
 			"sessionId", sessionId
 		));
 
-		assertThrows(
-			IllegalArgumentException.class,
+		MoplException exception = assertThrows(
+			MoplException.class,
 			() -> aiPlaylistTools.createPlaylist(
 				"테스트 플레이리스트",
 				"테스트 설명",
 				List.of(),
 				toolContext
 			)
+		);
+
+		assertEquals(
+			CommonErrorCode.INVALID_INPUT_VALUE,
+			exception.getErrorCode()
 		);
 
 		verifyNoInteractions(playlistService);
