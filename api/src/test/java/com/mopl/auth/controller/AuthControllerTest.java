@@ -15,9 +15,11 @@ import com.mopl.auth.config.SecurityConfig;
 import com.mopl.auth.handler.LoginFailureHandler;
 import com.mopl.auth.handler.LoginSuccessHandler;
 import com.mopl.auth.handler.LogoutSuccessHandlerImpl;
+import com.mopl.auth.handler.OAuth2LoginHandler;
 import com.mopl.auth.jwt.AuthCookieWriter;
 import com.mopl.auth.jwt.AuthCookies;
-import com.mopl.auth.jwt.JwtTokenProvider;
+import com.mopl.infrastructure.security.jwt.JwtTokenProvider;
+import com.mopl.auth.mail.LoggingTempPasswordMailSender;
 import com.mopl.auth.provider.EmailPasswordAuthenticationProvider;
 import com.mopl.auth.redis.TokenRedisService;
 import com.mopl.auth.service.AuthService;
@@ -39,6 +41,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+
 /**
  * 이번 PR 에서 새로 만든 인증 핵심 흐름(EmailPasswordAuthenticationProvider, 로그인 성공/실패 핸들러,
  * refresh token rotation, logout 시 Redis 무효화)을 실제로 검증하는 테스트.
@@ -54,6 +57,7 @@ import org.springframework.test.web.servlet.MockMvc;
         JwtTokenProvider.class,
         AuthCookieWriter.class,
         AuthService.class,
+        LoggingTempPasswordMailSender.class,
         LoginSuccessHandler.class,
         LoginFailureHandler.class,
         LogoutSuccessHandlerImpl.class
@@ -74,6 +78,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private TokenRedisService tokenRedisService;
+
+    @MockitoBean
+    private OAuth2LoginHandler oAuth2LoginHandler;
 
     private UUID userId;
     private User activeUser;

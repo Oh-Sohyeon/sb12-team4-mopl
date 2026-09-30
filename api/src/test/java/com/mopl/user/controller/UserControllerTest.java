@@ -11,8 +11,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mopl.auth.config.SecurityConfig;
 import com.mopl.auth.handler.LoginFailureHandler;
 import com.mopl.auth.handler.LoginSuccessHandler;
+import com.mopl.auth.handler.OAuth2LoginHandler;
 import com.mopl.auth.handler.LogoutSuccessHandlerImpl;
-import com.mopl.auth.jwt.JwtTokenProvider;
+import com.mopl.infrastructure.security.jwt.JwtTokenProvider;
 import com.mopl.auth.provider.EmailPasswordAuthenticationProvider;
 import com.mopl.auth.redis.TokenRedisService;
 import com.mopl.core.common.enums.UserRole;
@@ -36,6 +37,9 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * SecurityConfig 를 @Import 하면 그 생성자가 필요로 하는 협력자들을
  * 이 slice 컨텍스트가 못 찾으므로 @MockitoBean 으로 채워준다.
+ *
+ * 리뷰 반영: 이미지 업로드가 UserService 내부로 옮겨지면서 UserController 는 더 이상
+ * ImageUploader 를 직접 의존하지 않아 관련 MockitoBean 을 제거했다.
  */
 @WebMvcTest(UserController.class)
 @Import(SecurityConfig.class)
@@ -67,6 +71,9 @@ class UserControllerTest {
 
     @MockitoBean
     private LogoutSuccessHandlerImpl logoutSuccessHandler;
+
+    @MockitoBean
+    private OAuth2LoginHandler oAuth2LoginHandler;
 
     @Test
     @DisplayName("CSRF 토큰 없이 회원가입을 요청하면 403을 반환한다")
