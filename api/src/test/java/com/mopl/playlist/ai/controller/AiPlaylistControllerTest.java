@@ -13,7 +13,10 @@ import com.mopl.playlist.ai.service.PlaylistAiSessionService;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.playlist.ai.dto.AiPlaylistMessageResponse;
 import com.mopl.playlist.ai.dto.AiPlaylistSessionResponse;
+import com.mopl.common.exception.playlist.PlaylistAiRateLimitExceededException;
+import com.mopl.playlist.ai.service.AiPlaylistRateLimiter;
 
+import org.springframework.http.HttpHeaders;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +34,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -65,6 +70,9 @@ class AiPlaylistControllerTest {
 
 	@MockitoBean
 	private PlaylistAiMessageService playlistAiMessageService;
+
+	@MockitoBean
+	private AiPlaylistRateLimiter aiPlaylistRateLimiter;
 
 	@BeforeEach
 	void setUpAuthentication() {
@@ -304,6 +312,9 @@ class AiPlaylistControllerTest {
 			.andExpect(jsonPath("$.message")
 				.value("비 오는 날 보기 좋은 영화를 추천해드릴게요."));
 
+		verify(aiPlaylistRateLimiter)
+			.check(userId);
+
 		verify(aiPlaylistChatService).chat(
 			userId,
 			sessionId,
@@ -360,4 +371,41 @@ class AiPlaylistControllerTest {
 				.value("PLAYLIST_009"));
 	}
 
+	@Test
+	@DisplayName("AI 요청 제한을 초과하면 429와 Retry-After를 반환하고 AI 채팅을 호출하지 않는다")
+	void chatReturnsTooManyRequestsWhenRateLimitIsExceeded()
+		throws Exception {
+
+		UUID sessionId = UUID.randomUUID();
+
+		AiPlaylistChatRequest request =
+			new AiPlaylistChatRequest("비 오는 날 보기 좋은 영화 추천해줘");
+
+		doThrow(
+			new PlaylistAiRateLimitExceededException(42)
+		).when(aiPlaylistRateLimiter)
+			.check(userId);
+
+		mockMvc.perform(
+				post(
+					"/api/ai/playlists/sessions/{sessionId}/messages",
+					sessionId
+				)
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(objectMapper.writeValueAsString(request))
+			)
+			.andExpect(status().isTooManyRequests())
+			.andExpect(header().string(
+				HttpHeaders.RETRY_AFTER,
+				"42"
+			))
+			.andExpect(jsonPath("$.code")
+				.value("PLAYLIST_010"));
+
+		verify(aiPlaylistRateLimiter)
+			.check(userId);
+
+		verifyNoInteractions(aiPlaylistChatService);
+	}
 }
+

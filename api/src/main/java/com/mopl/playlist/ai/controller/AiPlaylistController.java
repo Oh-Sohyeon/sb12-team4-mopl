@@ -9,6 +9,8 @@ import com.mopl.playlist.ai.dto.AiPlaylistSessionResponse;
 import com.mopl.playlist.ai.service.AiPlaylistChatService;
 import com.mopl.playlist.ai.service.PlaylistAiMessageService;
 import com.mopl.playlist.ai.service.PlaylistAiSessionService;
+import com.mopl.playlist.ai.service.AiPlaylistRateLimiter;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -31,6 +33,7 @@ public class AiPlaylistController {
 	private final AiPlaylistChatService aiPlaylistChatService;
 	private final PlaylistAiSessionService playlistAiSessionService;
 	private final PlaylistAiMessageService playlistAiMessageService;
+	private final AiPlaylistRateLimiter aiPlaylistRateLimiter;
 
 	@PostMapping("/sessions")
 	public UUID createSession(
@@ -89,6 +92,8 @@ public class AiPlaylistController {
 		@PathVariable UUID sessionId,
 		@RequestBody @Valid AiPlaylistChatRequest request
 	) {
+		aiPlaylistRateLimiter.check(authUser.userId());
+
 		String message = aiPlaylistChatService.chat(
 			authUser.userId(),
 			sessionId,
