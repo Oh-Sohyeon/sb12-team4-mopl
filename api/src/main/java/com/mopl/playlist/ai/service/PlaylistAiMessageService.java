@@ -145,4 +145,9 @@ public class PlaylistAiMessageService {
 			new PlaylistAiMessage(session, role, content)
 		);
 	}
+
+	@Transactional
+	public void deleteMessage(UUID messageId) {
+		messageRepository.deleteById(messageId);
+	}
 }

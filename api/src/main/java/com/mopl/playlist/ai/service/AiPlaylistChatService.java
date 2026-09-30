@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.ai.chat.messages.Message;
 import com.mopl.core.common.enums.PlaylistAiMessageRole;
+import com.mopl.core.domain.playlist.entity.PlaylistAiMessage;
 import com.mopl.core.domain.playlist.entity.PlaylistAiSession;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -62,11 +63,12 @@ public class AiPlaylistChatService {
 
 		restoreChatMemory(memoryConversationId);
 
-		playlistAiMessageService.saveMessage(
-			session,
-			PlaylistAiMessageRole.USER,
-			message
-		);
+		PlaylistAiMessage userMessage =
+			playlistAiMessageService.saveMessage(
+				session,
+				PlaylistAiMessageRole.USER,
+				message
+			);
 
 		List<Message> memoryBeforeCall =
 			List.copyOf(aiPlaylistChatMemory.get(memoryConversationId));
@@ -112,6 +114,8 @@ public class AiPlaylistChatService {
 				.call()
 				.content();
 		} catch (RuntimeException e) {
+			playlistAiMessageService.deleteMessage(userMessage.getId());
+
 			aiPlaylistChatMemory.clear(memoryConversationId);
 
 			if (!memoryBeforeCall.isEmpty()) {

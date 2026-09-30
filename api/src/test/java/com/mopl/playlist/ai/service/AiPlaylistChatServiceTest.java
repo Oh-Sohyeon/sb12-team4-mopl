@@ -1,6 +1,7 @@
 package com.mopl.playlist.ai.service;
 
 import com.mopl.core.common.enums.PlaylistAiMessageRole;
+import com.mopl.core.domain.playlist.entity.PlaylistAiMessage;
 import com.mopl.core.domain.playlist.entity.PlaylistAiSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,8 +21,8 @@ import static org.mockito.Mockito.*;
 class AiPlaylistChatServiceTest {
 
 	@Test
-	@DisplayName("LLM 호출이 실패하면 사용자 메시지만 저장되고 응답 후처리는 실행되지 않는다")
-	void chatKeepsUserMessageWhenLlmFails() {
+	@DisplayName("LLM 호출이 실패하면 사용자 메시지를 삭제하고 응답 후처리는 실행되지 않는다")
+	void chatDeletesUserMessageWhenLlmFails() {
 		UUID userId = UUID.randomUUID();
 		UUID sessionId = UUID.randomUUID();
 		String userMessage = "비 오는 날 보기 좋은 영화 추천해줘";
@@ -37,6 +38,20 @@ class AiPlaylistChatServiceTest {
 
 		when(sessionService.getSession(sessionId, userId))
 			.thenReturn(session);
+
+		PlaylistAiMessage savedUserMessage =
+			mock(PlaylistAiMessage.class);
+
+		UUID savedUserMessageId = UUID.randomUUID();
+
+		when(savedUserMessage.getId())
+			.thenReturn(savedUserMessageId);
+
+		when(messageService.saveMessage(
+			session,
+			PlaylistAiMessageRole.USER,
+			userMessage
+		)).thenReturn(savedUserMessage);
 
 		when(messageService.getRecentMessages(sessionId))
 			.thenReturn(List.of());
@@ -82,6 +97,8 @@ class AiPlaylistChatServiceTest {
 			PlaylistAiMessageRole.USER,
 			userMessage
 		);
+
+		verify(messageService).deleteMessage(savedUserMessageId);
 
 		verify(messageService, never()).saveMessage(
 			eq(session),
