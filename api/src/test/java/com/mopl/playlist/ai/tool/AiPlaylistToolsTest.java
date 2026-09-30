@@ -23,27 +23,66 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
+@Testcontainers
 class AiPlaylistToolsTest {
+
+	@Container
+	static final GenericContainer<?> REDIS =
+		new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+			.withExposedPorts(6379);
+
+	private static LettuceConnectionFactory connectionFactory;
+	private static StringRedisTemplate redisTemplate;
 
 	private PlaylistService playlistService;
 	private AiPlaylistTools aiPlaylistTools;
 	private AiPlaylistCandidateStore candidateStore;
 
+	@BeforeAll
+	static void setUpRedis() {
+		connectionFactory = new LettuceConnectionFactory(
+			REDIS.getHost(),
+			REDIS.getMappedPort(6379)
+		);
+		connectionFactory.afterPropertiesSet();
+
+		redisTemplate = new StringRedisTemplate(connectionFactory);
+		redisTemplate.afterPropertiesSet();
+	}
+
 	@BeforeEach
 	void setUp() {
+		connectionFactory
+			.getConnection()
+			.serverCommands()
+			.flushDb();
+
 		playlistService = mock(PlaylistService.class);
 
 		SemanticCandidateSearchService semanticCandidateSearchService =
 			mock(SemanticCandidateSearchService.class);
 
-		candidateStore = new AiPlaylistCandidateStore();
+		candidateStore = new AiPlaylistCandidateStore(redisTemplate);
 
 		aiPlaylistTools = new AiPlaylistTools(
 			playlistService,
 			semanticCandidateSearchService,
 			candidateStore
 		);
+	}
+
+	@AfterAll
+	static void tearDownRedis() {
+		connectionFactory.destroy();
 	}
 
 	@Test
@@ -79,7 +118,7 @@ class AiPlaylistToolsTest {
 		String sessionId = "test-session";
 
 		AiPlaylistCandidateStore candidateStore =
-			new AiPlaylistCandidateStore();
+			new AiPlaylistCandidateStore(redisTemplate);
 
 		candidateStore.saveCandidates(
 			currentUserId,
@@ -140,7 +179,7 @@ class AiPlaylistToolsTest {
 		)).thenReturn(List.of(candidate));
 
 		AiPlaylistCandidateStore candidateStore =
-			new AiPlaylistCandidateStore();
+			new AiPlaylistCandidateStore(redisTemplate);
 
 		AiPlaylistTools tools = new AiPlaylistTools(
 			playlistService,
@@ -206,5 +245,88 @@ class AiPlaylistToolsTest {
 		);
 
 		verifyNoInteractions(playlistService);
+	}
+
+	@Test
+	@DisplayName("검색한 후보는 서버 인스턴스가 변경되어도 플레이리스트 생성에 사용할 수 있다")
+	void searchedCandidatesCanBeUsedAfterInstanceChange() {
+		UUID currentUserId = UUID.randomUUID();
+		UUID contentId = UUID.randomUUID();
+		String sessionId = "instance-change-session";
+
+		ToolContext toolContext = new ToolContext(Map.of(
+			"currentUserId", currentUserId,
+			"sessionId", sessionId
+		));
+
+		ContentCandidate candidate = mock(ContentCandidate.class);
+		when(candidate.contentId()).thenReturn(contentId);
+
+		SemanticCandidateSearchService searchService =
+			mock(SemanticCandidateSearchService.class);
+
+		when(searchService.search(
+			eq("주말에 볼 영화"),
+			any(SemanticCandidateCondition.class),
+			eq(10)
+		)).thenReturn(List.of(candidate));
+
+		// Server A
+		AiPlaylistCandidateStore firstStore =
+			new AiPlaylistCandidateStore(redisTemplate);
+
+		AiPlaylistTools firstInstance = new AiPlaylistTools(
+			playlistService,
+			searchService,
+			firstStore
+		);
+
+		// Server A에서 콘텐츠 검색 → 후보 저장
+		firstInstance.searchContents(
+			"주말에 볼 영화",
+			ContentType.MOVIE,
+			toolContext
+		);
+
+		assertTrue(firstStore.containsAll(
+			currentUserId,
+			sessionId,
+			Set.of(contentId)
+		));
+
+		// Server B 또는 서버 재시작 후 새 CandidateStore를 모사
+		AiPlaylistCandidateStore secondStore =
+			new AiPlaylistCandidateStore(redisTemplate);
+
+		AiPlaylistTools secondInstance = new AiPlaylistTools(
+			playlistService,
+			searchService,
+			secondStore
+		);
+
+		PlaylistResponse playlistResponse =
+			mock(PlaylistResponse.class);
+
+		when(playlistService.createPlaylistWithContents(
+			eq(currentUserId),
+			any(PlaylistCreateRequest.class),
+			eq(List.of(contentId))
+		)).thenReturn(playlistResponse);
+
+		// 검색은 이미 완료됐으므로 인스턴스가 변경되어도 생성되어야 함
+		assertDoesNotThrow(() ->
+			secondInstance.createPlaylist(
+				"주말 영화",
+				"AI 추천 영화",
+				List.of(contentId),
+				toolContext
+			)
+		);
+
+		verify(playlistService).createPlaylistWithContents(
+			eq(currentUserId),
+			any(PlaylistCreateRequest.class),
+			eq(List.of(contentId))
+		);
 	}
 }
