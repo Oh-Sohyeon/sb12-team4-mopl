@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mopl.auth.dto.AuthUser;
 import com.mopl.core.common.enums.PlaylistAiMessageRole;
 import com.mopl.core.common.enums.UserRole;
+import com.mopl.common.exception.playlist.PlaylistAiCandidateStoreUnavailableException;
 import com.mopl.core.domain.playlist.entity.PlaylistAiSession;
 import com.mopl.playlist.ai.dto.AiPlaylistChatRequest;
 import com.mopl.playlist.ai.service.AiPlaylistChatService;
@@ -30,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.mockito.Mockito.mock;
@@ -325,6 +327,37 @@ class AiPlaylistControllerTest {
 			.andExpect(status().isBadRequest());
 
 		verifyNoInteractions(aiPlaylistChatService);
+	}
+
+	@Test
+	@DisplayName("AI 후보 저장소 장애 시 503을 반환한다")
+	void chatReturnsServiceUnavailableWhenCandidateStoreIsUnavailable()
+		throws Exception {
+
+		UUID sessionId = UUID.randomUUID();
+
+		AiPlaylistChatRequest request =
+			new AiPlaylistChatRequest("비 오는 날 영화 추천해줘");
+
+		when(aiPlaylistChatService.chat(
+			eq(userId),
+			eq(sessionId),
+			eq(request.message())
+		)).thenThrow(
+			new PlaylistAiCandidateStoreUnavailableException()
+		);
+
+		mockMvc.perform(
+				post(
+					"/api/ai/playlists/sessions/{sessionId}/messages",
+					sessionId
+				)
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(objectMapper.writeValueAsString(request))
+			)
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.code")
+				.value("PLAYLIST_009"));
 	}
 
 }

@@ -48,6 +48,11 @@ public enum PlaylistErrorCode implements ErrorCode {
 		HttpStatus.BAD_REQUEST,
     	"PLAYLIST_008",
 		"검색 결과에 포함되지 않은 콘텐츠는 플레이리스트에 추가할 수 없습니다."
+	),
+	PLAYLIST_AI_CANDIDATE_STORE_UNAVAILABLE(
+		HttpStatus.SERVICE_UNAVAILABLE,
+		"PLAYLIST_009",
+		"AI 플레이리스트 후보 정보를 일시적으로 확인할 수 없습니다."
 	);
 	private final HttpStatus status;
 	private final String code;

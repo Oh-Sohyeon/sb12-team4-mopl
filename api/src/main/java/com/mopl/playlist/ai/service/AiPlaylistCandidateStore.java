@@ -1,6 +1,8 @@
 package com.mopl.playlist.ai.service;
 
 import lombok.RequiredArgsConstructor;
+import com.mopl.common.exception.playlist.PlaylistAiCandidateStoreUnavailableException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +34,11 @@ public class AiPlaylistCandidateStore {
 			.map(UUID::toString)
 			.toArray(String[]::new);
 
-		redisTemplate.opsForSet().add(key, values);
+		try {
+			redisTemplate.opsForSet().add(key, values);
+		} catch (DataAccessException e) {
+			throw new PlaylistAiCandidateStoreUnavailableException();
+		}
 	}
 
 	public boolean containsAll(
@@ -50,13 +56,18 @@ public class AiPlaylistCandidateStore {
 			.map(UUID::toString)
 			.toArray();
 
-		Map<Object, Boolean> membership =
-			redisTemplate.opsForSet().isMember(key, values);
+		try {
+			Map<Object, Boolean> membership =
+				redisTemplate.opsForSet().isMember(key, values);
 
-		return membership != null
-			&& membership.size() == contentIds.size()
-			&& membership.values().stream()
-			.allMatch(Boolean.TRUE::equals);
+			return membership != null
+				&& membership.size() == contentIds.size()
+				&& membership.values()
+				.stream()
+				.allMatch(Boolean.TRUE::equals);
+		} catch (DataAccessException e) {
+			throw new PlaylistAiCandidateStoreUnavailableException();
+		}
 	}
 
 	private String buildKey(

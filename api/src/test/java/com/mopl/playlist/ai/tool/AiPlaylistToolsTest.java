@@ -15,6 +15,7 @@ import org.springframework.ai.chat.model.ToolContext;
 import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.CommonErrorCode;
 import com.mopl.common.exception.playlist.PlaylistAiContentNotSearchedException;
+import com.mopl.common.exception.playlist.PlaylistAiCandidateStoreUnavailableException;
 
 import java.util.List;
 import java.util.Map;
@@ -328,5 +329,47 @@ class AiPlaylistToolsTest {
 			any(PlaylistCreateRequest.class),
 			eq(List.of(contentId))
 		);
+	}
+
+	@Test
+	@DisplayName("후보 저장소 장애 시 플레이리스트 생성을 수행하지 않는다")
+	void createPlaylistDoesNotProceedWhenCandidateStoreIsUnavailable() {
+		UUID currentUserId = UUID.randomUUID();
+		UUID contentId = UUID.randomUUID();
+		String sessionId = "redis-failure-session";
+
+		ToolContext toolContext = new ToolContext(Map.of(
+			"currentUserId", currentUserId,
+			"sessionId", sessionId
+		));
+
+		AiPlaylistCandidateStore unavailableCandidateStore =
+			mock(AiPlaylistCandidateStore.class);
+
+		when(unavailableCandidateStore.containsAll(
+			eq(currentUserId),
+			eq(sessionId),
+			eq(Set.of(contentId))
+		)).thenThrow(
+			new PlaylistAiCandidateStoreUnavailableException()
+		);
+
+		AiPlaylistTools tools = new AiPlaylistTools(
+			playlistService,
+			mock(SemanticCandidateSearchService.class),
+			unavailableCandidateStore
+		);
+
+		assertThrows(
+			PlaylistAiCandidateStoreUnavailableException.class,
+			() -> tools.createPlaylist(
+				"테스트 플레이리스트",
+				"테스트 설명",
+				List.of(contentId),
+				toolContext
+			)
+		);
+
+		verifyNoInteractions(playlistService);
 	}
 }

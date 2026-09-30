@@ -1,5 +1,12 @@
 package com.mopl.playlist.ai.service;
 
+import com.mopl.common.exception.MoplException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.HttpStatus;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterAll;
@@ -178,5 +185,67 @@ class AiPlaylistCandidateStoreTest {
 			sessionId,
 			Set.of(contentId)
 		));
+	}
+
+	@Test
+	@DisplayName("Redis 장애 시 후보 검증은 503 도메인 예외로 변환한다")
+	void candidateValidationFailsWithServiceUnavailableWhenRedisIsUnavailable() {
+		StringRedisTemplate unavailableRedisTemplate =
+			mock(StringRedisTemplate.class);
+
+		when(unavailableRedisTemplate.opsForSet())
+			.thenThrow(new DataAccessResourceFailureException(
+				"Redis unavailable"
+			));
+
+		AiPlaylistCandidateStore candidateStore =
+			new AiPlaylistCandidateStore(unavailableRedisTemplate);
+
+		UUID userId = UUID.randomUUID();
+		String sessionId = "redis-failure-reproduction";
+		UUID contentId = UUID.randomUUID();
+
+		MoplException exception = assertThrows(
+			MoplException.class,
+			() -> candidateStore.containsAll(
+				userId,
+				sessionId,
+				Set.of(contentId)
+			)
+		);
+
+		assertEquals(
+			HttpStatus.SERVICE_UNAVAILABLE,
+			exception.getErrorCode().getStatus()
+		);
+	}
+
+	@Test
+	@DisplayName("Redis 장애 시 후보 저장은 503 도메인 예외로 변환한다")
+	void candidateSaveFailsWithServiceUnavailableWhenRedisIsUnavailable() {
+		StringRedisTemplate unavailableRedisTemplate =
+			mock(StringRedisTemplate.class);
+
+		when(unavailableRedisTemplate.opsForSet())
+			.thenThrow(new DataAccessResourceFailureException(
+				"Redis unavailable"
+			));
+
+		AiPlaylistCandidateStore candidateStore =
+			new AiPlaylistCandidateStore(unavailableRedisTemplate);
+
+		MoplException exception = assertThrows(
+			MoplException.class,
+			() -> candidateStore.saveCandidates(
+				UUID.randomUUID(),
+				"redis-save-failure",
+				Set.of(UUID.randomUUID())
+			)
+		);
+
+		assertEquals(
+			HttpStatus.SERVICE_UNAVAILABLE,
+			exception.getErrorCode().getStatus()
+		);
 	}
 }
