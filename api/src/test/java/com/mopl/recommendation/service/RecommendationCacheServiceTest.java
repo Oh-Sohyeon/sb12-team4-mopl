@@ -222,4 +222,23 @@ class RecommendationCacheServiceTest {
                 "SF 콘텐츠를 선호하는 취향과 잘 맞습니다."
         );
     }
+
+    // [추가]
+    @Test
+    void evictsRecommendationsForUser() {
+        UUID userId =
+                UUID.randomUUID();
+
+        String expectedKey =
+                "recommendations:"
+                        + userId
+                        + ":v1";
+
+        recommendationCacheService.evict(
+                userId
+        );
+
+        verify(redisTemplate)
+                .delete(expectedKey);
+    }
 }

@@ -85,6 +85,11 @@ public class RecommendationCacheService {
         }
     }
 
+    // 사용자의 추천 취향 데이터 변경 시 기존 추천 결과 무효화
+    public void evict(UUID userId) {
+        deleteQuietly(createKey(userId));
+    }
+
     private String createKey(UUID userId) {
         return CACHE_KEY_PREFIX + userId + CACHE_KEY_VERSION;
     }
