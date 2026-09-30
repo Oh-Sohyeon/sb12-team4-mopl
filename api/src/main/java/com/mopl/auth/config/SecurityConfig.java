@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .authenticationProvider(emailPasswordAuthenticationProvider)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/sign-in", "/api/auth/refresh", "/api/auth/csrf-token").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll() // 회원가입
                         .anyRequest().authenticated()
                 )
