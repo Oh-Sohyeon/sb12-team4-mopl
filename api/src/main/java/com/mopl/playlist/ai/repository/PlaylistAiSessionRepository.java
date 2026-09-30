@@ -7,19 +7,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface PlaylistAiSessionRepository
-	extends JpaRepository<PlaylistAiSession, UUID> {
+	extends JpaRepository<PlaylistAiSession, UUID>,
+	PlaylistAiSessionRepositoryCustom {
 
 	Optional<PlaylistAiSession> findByIdAndUser_Id(
 		UUID sessionId,
-		UUID userId
-	);
-
-	List<PlaylistAiSession> findByUser_IdOrderByUpdatedAtDesc(
 		UUID userId
 	);
 

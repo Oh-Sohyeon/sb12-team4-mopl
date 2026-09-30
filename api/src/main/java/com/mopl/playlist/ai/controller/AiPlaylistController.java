@@ -16,7 +16,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -43,18 +42,21 @@ public class AiPlaylistController {
 	}
 
 	@GetMapping("/sessions")
-	public List<AiPlaylistSessionResponse> getSessions(
-		@AuthenticationPrincipal AuthUser authUser
+	public CursorResponse<AiPlaylistSessionResponse> getSessions(
+		@AuthenticationPrincipal AuthUser authUser,
+		@RequestParam(required = false) String cursor,
+		@RequestParam(required = false) String idAfter,
+		@RequestParam(defaultValue = "20") int limit,
+		@RequestParam(defaultValue = "DESCENDING")
+		String sortDirection
 	) {
-		return playlistAiSessionService.getSessions(authUser.userId())
-			.stream()
-			.map(session -> new AiPlaylistSessionResponse(
-				session.getId(),
-				session.getTitle(),
-				session.getCreatedAt(),
-				session.getUpdatedAt()
-			))
-			.toList();
+		return playlistAiSessionService.getSessions(
+			authUser.userId(),
+			cursor,
+			idAfter,
+			limit,
+			sortDirection
+		);
 	}
 
 	@GetMapping("/sessions/{sessionId}/messages")

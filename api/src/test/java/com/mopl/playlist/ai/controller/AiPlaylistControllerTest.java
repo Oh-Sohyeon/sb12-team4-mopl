@@ -11,6 +11,7 @@ import com.mopl.playlist.ai.service.PlaylistAiMessageService;
 import com.mopl.playlist.ai.service.PlaylistAiSessionService;
 import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.playlist.ai.dto.AiPlaylistMessageResponse;
+import com.mopl.playlist.ai.dto.AiPlaylistSessionResponse;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -135,44 +136,69 @@ class AiPlaylistControllerTest {
 	}
 
 	@Test
-	@DisplayName("AI 플레이리스트 대화 세션 목록을 조회한다")
+	@DisplayName("AI 플레이리스트 대화 세션 목록을 커서 페이지네이션으로 조회한다")
 	void getSessions() throws Exception {
 		UUID sessionId = UUID.randomUUID();
-		LocalDateTime createdAt =
-			LocalDateTime.of(2026, 9, 29, 10, 0);
-		LocalDateTime updatedAt =
-			LocalDateTime.of(2026, 9, 29, 11, 0);
 
-		PlaylistAiSession session =
-			mock(PlaylistAiSession.class);
+		AiPlaylistSessionResponse session =
+			new AiPlaylistSessionResponse(
+				sessionId,
+				"비 오는 날 영화",
+				LocalDateTime.of(2026, 9, 29, 10, 0),
+				LocalDateTime.of(2026, 9, 29, 11, 0)
+			);
 
-		when(session.getId())
-			.thenReturn(sessionId);
-		when(session.getTitle())
-			.thenReturn("비 오는 날 영화");
-		when(session.getCreatedAt())
-			.thenReturn(createdAt);
-		when(session.getUpdatedAt())
-			.thenReturn(updatedAt);
+		CursorResponse<AiPlaylistSessionResponse> response =
+			CursorResponse.of(
+				List.of(session),
+				"2026-09-29T11:00:00",
+				sessionId.toString(),
+				true,
+				2L,
+				"UPDATED_AT",
+				"DESCENDING"
+			);
 
-		when(playlistAiSessionService.getSessions(userId))
-			.thenReturn(List.of(session));
+		when(playlistAiSessionService.getSessions(
+			userId,
+			null,
+			null,
+			20,
+			"DESCENDING"
+		)).thenReturn(response);
 
 		mockMvc.perform(
 				get("/api/ai/playlists/sessions")
 			)
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].id")
+			.andExpect(jsonPath("$.data[0].id")
 				.value(sessionId.toString()))
-			.andExpect(jsonPath("$[0].title")
+			.andExpect(jsonPath("$.data[0].title")
 				.value("비 오는 날 영화"))
-			.andExpect(jsonPath("$[0].createdAt")
+			.andExpect(jsonPath("$.data[0].createdAt")
 				.value("2026-09-29T10:00:00"))
-			.andExpect(jsonPath("$[0].updatedAt")
-				.value("2026-09-29T11:00:00"));
+			.andExpect(jsonPath("$.data[0].updatedAt")
+				.value("2026-09-29T11:00:00"))
+			.andExpect(jsonPath("$.nextCursor")
+				.value("2026-09-29T11:00:00"))
+			.andExpect(jsonPath("$.nextIdAfter")
+				.value(sessionId.toString()))
+			.andExpect(jsonPath("$.hasNext")
+				.value(true))
+			.andExpect(jsonPath("$.totalCount")
+				.value(2))
+			.andExpect(jsonPath("$.sortBy")
+				.value("UPDATED_AT"))
+			.andExpect(jsonPath("$.sortDirection")
+				.value("DESCENDING"));
 
-		verify(playlistAiSessionService)
-			.getSessions(userId);
+		verify(playlistAiSessionService).getSessions(
+			userId,
+			null,
+			null,
+			20,
+			"DESCENDING"
+		);
 	}
 
 	@Test
