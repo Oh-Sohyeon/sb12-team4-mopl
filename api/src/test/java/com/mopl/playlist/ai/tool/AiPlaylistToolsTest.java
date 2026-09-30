@@ -16,7 +16,9 @@ import com.mopl.common.exception.MoplException;
 import com.mopl.common.exception.CommonErrorCode;
 import com.mopl.common.exception.playlist.PlaylistAiContentNotSearchedException;
 import com.mopl.common.exception.playlist.PlaylistAiCandidateStoreUnavailableException;
+import com.mopl.playlist.ai.config.AiPlaylistProperties;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,7 +74,10 @@ class AiPlaylistToolsTest {
 		SemanticCandidateSearchService semanticCandidateSearchService =
 			mock(SemanticCandidateSearchService.class);
 
-		candidateStore = new AiPlaylistCandidateStore(redisTemplate);
+		candidateStore = new AiPlaylistCandidateStore(
+			redisTemplate,
+			new AiPlaylistProperties(Duration.ofHours(6))
+		);
 
 		aiPlaylistTools = new AiPlaylistTools(
 			playlistService,
@@ -119,7 +124,10 @@ class AiPlaylistToolsTest {
 		String sessionId = "test-session";
 
 		AiPlaylistCandidateStore candidateStore =
-			new AiPlaylistCandidateStore(redisTemplate);
+			new AiPlaylistCandidateStore(
+				redisTemplate,
+				new AiPlaylistProperties(Duration.ofHours(6))
+			);
 
 		candidateStore.saveCandidates(
 			currentUserId,
@@ -180,7 +188,10 @@ class AiPlaylistToolsTest {
 		)).thenReturn(List.of(candidate));
 
 		AiPlaylistCandidateStore candidateStore =
-			new AiPlaylistCandidateStore(redisTemplate);
+			new AiPlaylistCandidateStore(
+				redisTemplate,
+				new AiPlaylistProperties(Duration.ofHours(6))
+			);
 
 		AiPlaylistTools tools = new AiPlaylistTools(
 			playlistService,
@@ -274,7 +285,10 @@ class AiPlaylistToolsTest {
 
 		// Server A
 		AiPlaylistCandidateStore firstStore =
-			new AiPlaylistCandidateStore(redisTemplate);
+			new AiPlaylistCandidateStore(
+				redisTemplate,
+				new AiPlaylistProperties(Duration.ofHours(6))
+			);
 
 		AiPlaylistTools firstInstance = new AiPlaylistTools(
 			playlistService,
@@ -297,7 +311,10 @@ class AiPlaylistToolsTest {
 
 		// Server B 또는 서버 재시작 후 새 CandidateStore를 모사
 		AiPlaylistCandidateStore secondStore =
-			new AiPlaylistCandidateStore(redisTemplate);
+			new AiPlaylistCandidateStore(
+				redisTemplate,
+				new AiPlaylistProperties(Duration.ofHours(6))
+			);
 
 		AiPlaylistTools secondInstance = new AiPlaylistTools(
 			playlistService,
