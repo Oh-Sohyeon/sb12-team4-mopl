@@ -18,6 +18,8 @@ import com.mopl.core.common.dto.CursorResponse;
 import com.mopl.playlist.repository.PlaylistContentRepository;
 import com.mopl.playlist.repository.PlaylistRepository;
 import com.mopl.playlist.repository.PlaylistSubscriptionRepository;
+import com.mopl.content.search.service.ContentSearchService;
+import com.mopl.content.search.document.ContentSearchDocument;
 
 import jakarta.persistence.EntityManager;
 import jakarta.validation.ConstraintViolation;
@@ -43,6 +45,7 @@ public class PlaylistService {
 	private final EntityManager entityManager;
 	private final PlaylistContentRepository playlistContentRepository;
 	private final ContentRepository contentRepository;
+	private final ContentSearchService contentSearchService;
 	private final PlaylistSubscriptionRepository playlistSubscriptionRepository;
 
 	private final Validator validator;
@@ -58,6 +61,7 @@ public class PlaylistService {
 		EntityManager entityManager,
 		PlaylistContentRepository playlistContentRepository,
 		ContentRepository contentRepository,
+		ContentSearchService contentSearchService,
 		PlaylistSubscriptionRepository playlistSubscriptionRepository,
 		Validator validator
 	) {
@@ -65,6 +69,7 @@ public class PlaylistService {
 		this.entityManager = entityManager;
 		this.playlistContentRepository = playlistContentRepository;
 		this.contentRepository = contentRepository;
+		this.contentSearchService = contentSearchService;
 		this.playlistSubscriptionRepository = playlistSubscriptionRepository;
 		this.validator = validator;
 	}
@@ -72,6 +77,12 @@ public class PlaylistService {
 	public PlaylistResponse getPlaylist(UUID playlistId, UUID currentUserId) {
 		Playlist playlist = findPlaylistOrThrow(playlistId);
 		List<Content> contents = getContentsOf(playlistId);
+		Map<UUID, ContentSearchDocument> documentsByContentId =
+			contentSearchService.findDocumentsByContentIds(
+				contents.stream()
+					.map(Content::getId)
+					.toList()
+			);
 		long subscriberCount = playlistSubscriptionRepository.countByPlaylistId(playlistId);
 
 		boolean subscribedByMe = currentUserId != null
@@ -83,6 +94,7 @@ public class PlaylistService {
 		return PlaylistResponse.from(
 			playlist,
 			contents,
+			documentsByContentId,
 			subscriberCount,
 			subscribedByMe
 		);
@@ -222,7 +234,22 @@ public class PlaylistService {
 				currentUserId
 			);
 
-		return PlaylistResponse.from(playlist, getContentsOf(playlistId), subscriberCount, subscribedByMe);
+		List<Content> contents = getContentsOf(playlistId);
+
+		Map<UUID, ContentSearchDocument> documentsByContentId =
+			contentSearchService.findDocumentsByContentIds(
+				contents.stream()
+					.map(Content::getId)
+					.toList()
+			);
+
+		return PlaylistResponse.from(
+			playlist,
+			contents,
+			documentsByContentId,
+			subscriberCount,
+			subscribedByMe
+		);
 	}
 
 	@Transactional
@@ -284,6 +311,15 @@ public class PlaylistService {
 				Collectors.mapping(PlaylistContent::getContent, Collectors.toList())
 			));
 
+		List<UUID> contentIds = contentsByPlaylistId.values().stream()
+			.flatMap(List::stream)
+			.map(Content::getId)
+			.distinct()
+			.toList();
+
+		Map<UUID, ContentSearchDocument> documentsByContentId =
+			contentSearchService.findDocumentsByContentIds(contentIds);
+
 		Map<UUID, Long> subscriberCountByPlaylistId = playlistSubscriptionRepository.countByPlaylistIdIn(playlistIds);
 
 		Set<UUID> subscribedPlaylistIds = currentUserId != null
@@ -297,6 +333,7 @@ public class PlaylistService {
 			.map(playlist -> PlaylistResponse.from(
 				playlist,
 				contentsByPlaylistId.getOrDefault(playlist.getId(), List.of()),
+				documentsByContentId,
 				subscriberCountByPlaylistId.getOrDefault(playlist.getId(), 0L),
 				subscribedPlaylistIds.contains(playlist.getId())
 			))

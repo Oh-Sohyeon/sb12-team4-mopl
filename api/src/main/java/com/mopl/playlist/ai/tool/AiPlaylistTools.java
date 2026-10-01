@@ -17,6 +17,8 @@ import com.mopl.content.search.service.SemanticCandidateSearchService;
 import com.mopl.content.search.condition.SemanticCandidateCondition;
 import com.mopl.content.search.dto.ContentCandidate;
 import com.mopl.core.common.enums.ContentType;
+import com.mopl.recommendation.dto.RecommendationItem;
+import com.mopl.recommendation.service.RecommendationService;
 
 
 import java.util.UUID;
@@ -30,6 +32,7 @@ public class AiPlaylistTools {
 	private final PlaylistService playlistService;
 	private final SemanticCandidateSearchService semanticCandidateSearchService;
 	private final AiPlaylistCandidateStore aiPlaylistCandidateStore;
+	private final RecommendationService recommendationService;
 
 	@Tool(description = """
     사용자가 원하는 조건에 맞는 MOPL의 실제 콘텐츠를 찾을 때 사용합니다.
@@ -69,17 +72,47 @@ public class AiPlaylistTools {
 	}
 
 	@Tool(description = """
+        사용자가 자신의 취향, 과거 시청 이력, 평가 기록을 기반으로
+        콘텐츠를 추천해달라고 요청할 때 사용합니다.
+        일반적인 조건이나 분위기를 기준으로 콘텐츠를 찾는 경우에는
+        searchContents를 사용하세요.
+        """)
+	public List<RecommendationItem> recommendContentsForUser(
+		ToolContext toolContext
+	) {
+		UUID currentUserId =
+			(UUID) toolContext.getContext().get("currentUserId");
+
+		String sessionId =
+			(String) toolContext.getContext().get("sessionId");
+
+		List<RecommendationItem> recommendations =
+			recommendationService.getRecommendations(currentUserId);
+
+		aiPlaylistCandidateStore.saveCandidates(
+			currentUserId,
+			sessionId,
+			recommendations.stream()
+				.map(RecommendationItem::contentId)
+				.collect(java.util.stream.Collectors.toSet())
+		);
+
+		return recommendations;
+	}
+
+	@Tool(description = """
 	사용자가 현재 대화에서 구성한 콘텐츠들로
 	플레이리스트를 실제로 생성해 달라고 명확하게 요청했을 때 사용합니다.
 	사용자의 명확한 생성 요청이 있기 전에는 호출하지 마세요.
 	
 	플레이리스트를 생성하기 전에 사용할 콘텐츠가
-	searchContents를 통해 실제 MOPL 콘텐츠인지 확인되어 있어야 합니다.
-	현재 검색 후보가 확인되지 않은 경우에는
-	searchContents를 다시 호출하여 콘텐츠를 확인한 후 이 도구를 호출하세요.
+	searchContents 또는 recommendContentsForUser를 통해
+	실제 MOPL 콘텐츠인지 확인되어 있어야 합니다.
+	현재 후보가 확인되지 않은 경우에는
+	사용자의 요청에 맞는 도구를 다시 호출하여 콘텐츠를 확인한 후 이 도구를 호출하세요.
 	
 	contentIds에는 콘텐츠 제목이 아니라
-	searchContents 결과의 contentId UUID 값을 반드시 전달하세요.
+	검색 또는 추천 결과의 contentId UUID 값을 반드시 전달하세요.
 	예: "E2E Content 2"가 아니라 "22222222-2222-2222-2222-222222222222"
 	""")
 	public PlaylistResponse createPlaylist(

@@ -17,6 +17,8 @@ import com.mopl.common.exception.CommonErrorCode;
 import com.mopl.common.exception.playlist.PlaylistAiContentNotSearchedException;
 import com.mopl.common.exception.playlist.PlaylistAiCandidateStoreUnavailableException;
 import com.mopl.playlist.ai.config.AiPlaylistProperties;
+import com.mopl.recommendation.service.RecommendationService;
+import com.mopl.recommendation.dto.RecommendationItem;
 
 import java.time.Duration;
 import java.util.List;
@@ -49,6 +51,7 @@ class AiPlaylistToolsTest {
 	private PlaylistService playlistService;
 	private AiPlaylistTools aiPlaylistTools;
 	private AiPlaylistCandidateStore candidateStore;
+	private RecommendationService recommendationService;
 
 	@BeforeAll
 	static void setUpRedis() {
@@ -71,6 +74,8 @@ class AiPlaylistToolsTest {
 
 		playlistService = mock(PlaylistService.class);
 
+		recommendationService = mock(RecommendationService.class);
+
 		SemanticCandidateSearchService semanticCandidateSearchService =
 			mock(SemanticCandidateSearchService.class);
 
@@ -82,7 +87,8 @@ class AiPlaylistToolsTest {
 		aiPlaylistTools = new AiPlaylistTools(
 			playlistService,
 			semanticCandidateSearchService,
-			candidateStore
+			candidateStore,
+			recommendationService
 		);
 	}
 
@@ -138,7 +144,8 @@ class AiPlaylistToolsTest {
 		AiPlaylistTools tools = new AiPlaylistTools(
 			playlistService,
 			mock(SemanticCandidateSearchService.class),
-			candidateStore
+			candidateStore,
+			recommendationService
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
@@ -196,7 +203,8 @@ class AiPlaylistToolsTest {
 		AiPlaylistTools tools = new AiPlaylistTools(
 			playlistService,
 			searchService,
-			candidateStore
+			candidateStore,
+			recommendationService
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
@@ -221,6 +229,39 @@ class AiPlaylistToolsTest {
 			any(SemanticCandidateCondition.class),
 			eq(10)
 		);
+	}
+
+	@Test
+	@DisplayName("개인화 추천 결과의 ID를 세션별 후보로 저장한다")
+	void recommendContentsForUserSavesCandidatesBySession() {
+		UUID currentUserId = UUID.randomUUID();
+		UUID contentId = UUID.randomUUID();
+		String sessionId = "test-session";
+
+		RecommendationItem recommendation = mock(RecommendationItem.class);
+		when(recommendation.contentId()).thenReturn(contentId);
+
+		when(recommendationService.getRecommendations(currentUserId))
+			.thenReturn(List.of(recommendation));
+
+		ToolContext toolContext = new ToolContext(Map.of(
+			"currentUserId", currentUserId,
+			"sessionId", sessionId
+		));
+
+		List<RecommendationItem> result =
+			aiPlaylistTools.recommendContentsForUser(toolContext);
+
+		assertEquals(List.of(recommendation), result);
+
+		assertTrue(candidateStore.containsAll(
+			currentUserId,
+			sessionId,
+			Set.of(contentId)
+		));
+
+		verify(recommendationService)
+			.getRecommendations(currentUserId);
 	}
 
 	@Test
@@ -293,7 +334,8 @@ class AiPlaylistToolsTest {
 		AiPlaylistTools firstInstance = new AiPlaylistTools(
 			playlistService,
 			searchService,
-			firstStore
+			firstStore,
+			recommendationService
 		);
 
 		// Server A에서 콘텐츠 검색 → 후보 저장
@@ -319,7 +361,8 @@ class AiPlaylistToolsTest {
 		AiPlaylistTools secondInstance = new AiPlaylistTools(
 			playlistService,
 			searchService,
-			secondStore
+			secondStore,
+			recommendationService
 		);
 
 		PlaylistResponse playlistResponse =
@@ -374,7 +417,8 @@ class AiPlaylistToolsTest {
 		AiPlaylistTools tools = new AiPlaylistTools(
 			playlistService,
 			mock(SemanticCandidateSearchService.class),
-			unavailableCandidateStore
+			unavailableCandidateStore,
+			recommendationService
 		);
 
 		assertThrows(

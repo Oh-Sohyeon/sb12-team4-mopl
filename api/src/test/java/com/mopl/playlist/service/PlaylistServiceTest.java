@@ -12,6 +12,7 @@ import com.mopl.playlist.dto.PlaylistResponse;
 import com.mopl.playlist.dto.PlaylistUpdateRequest;
 import com.mopl.playlist.repository.PlaylistContentRepository;
 import com.mopl.playlist.repository.PlaylistRepository;
+import com.mopl.content.search.service.ContentSearchService;
 import jakarta.persistence.EntityManager;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,6 +67,9 @@ class PlaylistServiceTest {
 	@Mock
 	private Validator validator;
 
+	@Mock
+	private ContentSearchService contentSearchService;
+
 	private PlaylistService playlistService;
 
 	private UUID ownerId;
@@ -80,6 +84,7 @@ class PlaylistServiceTest {
 			entityManager,
 			playlistContentRepository,
 			contentRepository,
+			contentSearchService,
 			playlistSubscriptionRepository,
 			validator
 		);
@@ -115,7 +120,7 @@ class PlaylistServiceTest {
 			PlaylistResponse response = playlistService.getPlaylist(playlistId, null);
 
 			assertThat(response.id()).isEqualTo(playlistId);
-			assertThat(response.ownerId()).isEqualTo(ownerId);
+			assertThat(response.owner().userId()).isEqualTo(ownerId);
 			assertThat(response.title()).isEqualTo("기존 제목");
 			// 연결된 구독과 콘텐츠가 없으면 기본값을 반환한다
 			assertThat(response.subscriberCount()).isZero();
@@ -340,7 +345,7 @@ class PlaylistServiceTest {
 			assertThat(saved.getOwner()).isEqualTo(owner);
 			assertThat(saved.getTitle()).isEqualTo("제목");
 			assertThat(saved.getDescription()).isEqualTo("설명");
-			assertThat(response.ownerId()).isEqualTo(ownerId);
+			assertThat(response.owner().userId()).isEqualTo(ownerId);
 		}
 	}
 
