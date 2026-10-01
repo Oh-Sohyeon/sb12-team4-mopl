@@ -4,19 +4,29 @@ import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     createAiPlaylistSession,
+    getAiPlaylistMessages,
     sendAiPlaylistMessage,
+    type AiPlaylistMessage,
 } from '@/lib/api/aiPlaylists';
 
-interface ChatMessage {
-    role: 'USER' | 'ASSISTANT';
-    content: string;
+interface AiPlaylistChatProps {
+    initialSessionId: string | null;
+    onSessionCreated?: (sessionId: string) => void;
 }
 
-export default function AiPlaylistChat() {
-    const [sessionId, setSessionId] = useState<string | null>(null);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function AiPlaylistChat({
+                                           initialSessionId,
+                                           onSessionCreated,
+                                       }: AiPlaylistChatProps) {
+    const [sessionId, setSessionId] = useState<string | null>(
+        initialSessionId,
+    );
+    const [messages, setMessages] = useState<AiPlaylistMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(
+        initialSessionId !== null,
+    );
     const [error, setError] = useState<string | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -28,7 +38,55 @@ export default function AiPlaylistChat() {
         });
     }, [messages, isLoading]);
 
-    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    useEffect(() => {
+        setSessionId(initialSessionId);
+        setMessages([]);
+        setInput('');
+        setError(null);
+
+        if (!initialSessionId) {
+            setIsHistoryLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadMessages = async () => {
+            try {
+                setIsHistoryLoading(true);
+
+                const response = await getAiPlaylistMessages(
+                    initialSessionId,
+                    {
+                        limit: 100,
+                        sortDirection: 'ASCENDING',
+                    },
+                );
+
+                if (!cancelled) {
+                    setMessages(response.data);
+                }
+            } catch {
+                if (!cancelled) {
+                    setError('이전 대화를 불러오지 못했어요.');
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsHistoryLoading(false);
+                }
+            }
+        };
+
+        void loadMessages();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [initialSessionId]);
+
+    const handleSubmit = async (
+        event: FormEvent<HTMLFormElement>,
+    ) => {
         event.preventDefault();
 
         const message = input.trim();
@@ -39,13 +97,15 @@ export default function AiPlaylistChat() {
 
         setInput('');
         setError(null);
-        setMessages((prev) => [
-            ...prev,
-            {
-                role: 'USER',
-                content: message,
-            },
-        ]);
+
+        const optimisticMessage: AiPlaylistMessage = {
+            id: `temp-user-${Date.now()}`,
+            role: 'USER',
+            content: message,
+            createdAt: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, optimisticMessage]);
 
         try {
             setIsLoading(true);
@@ -54,7 +114,9 @@ export default function AiPlaylistChat() {
 
             if (!currentSessionId) {
                 currentSessionId = await createAiPlaylistSession();
+
                 setSessionId(currentSessionId);
+                onSessionCreated?.(currentSessionId);
             }
 
             const response = await sendAiPlaylistMessage(
@@ -62,19 +124,33 @@ export default function AiPlaylistChat() {
                 message,
             );
 
+            const assistantMessage: AiPlaylistMessage = {
+                id: `temp-assistant-${Date.now()}`,
+                role: 'ASSISTANT',
+                content: response.message,
+                createdAt: new Date().toISOString(),
+            };
+
             setMessages((prev) => [
                 ...prev,
-                {
-                    role: 'ASSISTANT',
-                    content: response.message,
-                },
+                assistantMessage,
             ]);
         } catch {
-            setError('요청에 실패했어요. 잠시 후 다시 시도해주세요.');
+            setError(
+                '요청에 실패했어요. 잠시 후 다시 시도해주세요.',
+            );
         } finally {
             setIsLoading(false);
         }
     };
+
+    if (isHistoryLoading) {
+        return (
+            <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
+                이전 대화를 불러오는 중...
+            </div>
+        );
+    }
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -85,6 +161,7 @@ export default function AiPlaylistChat() {
                             <p className="font-medium text-white">
                                 어떤 플레이리스트를 만들어볼까요?
                             </p>
+
                             <p className="mt-1 text-sm text-gray-400">
                                 원하는 분위기나 콘텐츠를 말해보세요.
                             </p>
@@ -92,9 +169,9 @@ export default function AiPlaylistChat() {
                     </div>
                 ) : (
                     <div className="flex flex-col gap-3">
-                        {messages.map((message, index) => (
+                        {messages.map((message) => (
                             <div
-                                key={`${message.role}-${index}`}
+                                key={message.id}
                                 className={
                                     message.role === 'USER'
                                         ? 'ml-auto max-w-[80%] rounded-2xl bg-pink-600 px-4 py-2 text-sm text-white'

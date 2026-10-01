@@ -1,52 +1,126 @@
 import { useState } from 'react';
-import { Bot, X } from 'lucide-react';
+import { ArrowLeft, Bot, Menu, Plus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
 import AiPlaylistChat from './AiPlaylistChat';
+import AiPlaylistSessionList from './AiPlaylistSessionList';
+
+type View = 'chat' | 'list';
 
 export default function AiPlaylist() {
     const [isOpen, setIsOpen] = useState(false);
+    const [view, setView] = useState<View>('chat');
+    const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+        null,
+    );
+
+    const open = () => {
+        // AI Playlist를 새로 열 때는 항상 새 대화 화면에서 시작한다.
+        setSelectedSessionId(null);
+        setView('chat');
+        setIsOpen(true);
+    };
+
+    const close = () => {
+        setIsOpen(false);
+    };
+
+    const openSessionList = () => {
+        setView('list');
+    };
+
+    const returnToChat = () => {
+        setView('chat');
+    };
+
+    const openSession = (sessionId: string) => {
+        setSelectedSessionId(sessionId);
+        setView('chat');
+    };
+
+    const startNewChat = () => {
+        setSelectedSessionId(null);
+        setView('chat');
+    };
 
     return (
         <>
             {isOpen && (
                 <section
                     className="
-                       fixed bottom-24 right-6 z-50
-                       flex h-[600px] w-[380px] flex-col
-                       overflow-hidden rounded-2xl border border-[#303038] bg-[#18181d] shadow-xl
+                        fixed bottom-24 right-6 z-50
+                        flex h-[600px] w-[440px] max-w-[calc(100vw-3rem)] flex-col
+                        overflow-hidden rounded-2xl border border-[#303038]
+                        bg-[#18181d] shadow-xl
                     "
                     aria-label="AI Playlist"
                 >
                     <header className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                            <Bot className="h-5 w-5 text-pink-500" />
+                        <div className="flex min-w-0 items-center gap-2">
+                            {view === 'list' ? (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={returnToChat}
+                                    aria-label="채팅으로 돌아가기"
+                                    className="shrink-0 text-gray-400 hover:bg-gray-700 hover:text-white"
+                                >
+                                    <ArrowLeft className="h-5 w-5" />
+                                </Button>
+                            ) : (
+                                <Bot className="h-5 w-5 shrink-0 text-pink-500" />
+                            )}
 
-                            <div>
+                            <div className="min-w-0">
                                 <h2 className="font-semibold text-white">
-                                    AI Playlist
+                                    {view === 'list'
+                                        ? '이전 대화'
+                                        : 'AI Playlist'}
                                 </h2>
 
-                                <p className="text-xs text-gray-400">
-                                    원하는 콘텐츠를 말해보세요
+                                <p className="truncate text-xs text-gray-400">
+                                    {view === 'list'
+                                        ? '이어서 대화할 채팅을 선택해보세요'
+                                        : '원하는 콘텐츠를 말해보세요'}
                                 </p>
                             </div>
                         </div>
 
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setIsOpen(false)}
-                            aria-label="AI Playlist 닫기"
-                            className="text-gray-400 hover:bg-gray-700 hover:text-white"
-                        >
-                            <X className="h-5 w-5" />
-                        </Button>
+                        {view === 'chat' ? (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={openSessionList}
+                                aria-label="이전 대화 목록"
+                                className="text-gray-400 hover:bg-gray-700 hover:text-white"
+                            >
+                                <Menu className="h-5 w-5" />
+                            </Button>
+                        ) : (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={startNewChat}
+                                aria-label="새 대화"
+                                className="text-gray-400 hover:bg-gray-700 hover:text-white"
+                            >
+                                <Plus className="h-5 w-5" />
+                            </Button>
+                        )}
                     </header>
 
-                    <AiPlaylistChat />
+                    {view === 'chat' ? (
+                        <AiPlaylistChat
+                            initialSessionId={selectedSessionId}
+                            onSessionCreated={setSelectedSessionId}
+                        />
+                    ) : (
+                        <AiPlaylistSessionList onSelect={openSession} />
+                    )}
                 </section>
             )}
 
@@ -59,8 +133,16 @@ export default function AiPlaylist() {
                     bg-pink-500 text-white shadow-lg
                     hover:bg-pink-600 hover:text-white
                 "
-                onClick={() => setIsOpen((prev) => !prev)}
-                aria-label={isOpen ? 'AI Playlist 닫기' : 'AI Playlist 열기'}
+                onClick={() => {
+                    if (isOpen) {
+                        close();
+                    } else {
+                        open();
+                    }
+                }}
+                aria-label={
+                    isOpen ? 'AI Playlist 닫기' : 'AI Playlist 열기'
+                }
                 aria-expanded={isOpen}
             >
                 {isOpen ? (
