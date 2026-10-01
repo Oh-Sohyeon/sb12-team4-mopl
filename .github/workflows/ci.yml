@@ -12,6 +12,9 @@ on:
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle/**'
+      - 'gradlew'
+      - 'gradle.properties'
+      - '.github/workflows/ci.yml'
   push:
     branches: [ develop ]
     paths:

@@ -5,10 +5,12 @@ on:
     branches: [ develop, main ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
   push:
     branches: [ develop ]
     paths:
       - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
 
 jobs:
   build-and-test:
