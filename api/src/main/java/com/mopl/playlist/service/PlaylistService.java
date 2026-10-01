@@ -25,6 +25,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.data.elasticsearch.UncategorizedElasticsearchException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class PlaylistService {
@@ -78,7 +82,7 @@ public class PlaylistService {
 		Playlist playlist = findPlaylistOrThrow(playlistId);
 		List<Content> contents = getContentsOf(playlistId);
 		Map<UUID, ContentSearchDocument> documentsByContentId =
-			contentSearchService.findDocumentsByContentIds(
+			findDocumentsByContentIdsOrEmpty(
 				contents.stream()
 					.map(Content::getId)
 					.toList()
@@ -237,7 +241,7 @@ public class PlaylistService {
 		List<Content> contents = getContentsOf(playlistId);
 
 		Map<UUID, ContentSearchDocument> documentsByContentId =
-			contentSearchService.findDocumentsByContentIds(
+			findDocumentsByContentIdsOrEmpty(
 				contents.stream()
 					.map(Content::getId)
 					.toList()
@@ -318,7 +322,7 @@ public class PlaylistService {
 			.toList();
 
 		Map<UUID, ContentSearchDocument> documentsByContentId =
-			contentSearchService.findDocumentsByContentIds(contentIds);
+			findDocumentsByContentIdsOrEmpty(contentIds);
 
 		Map<UUID, Long> subscriberCountByPlaylistId = playlistSubscriptionRepository.countByPlaylistIdIn(playlistIds);
 
@@ -338,6 +342,15 @@ public class PlaylistService {
 				subscribedPlaylistIds.contains(playlist.getId())
 			))
 			.toList();
+	}
+
+	private Map<UUID, ContentSearchDocument> findDocumentsByContentIdsOrEmpty(List<UUID> contentIds) {
+		try {
+			return contentSearchService.findDocumentsByContentIds(contentIds);
+		} catch (DataAccessResourceFailureException | UncategorizedElasticsearchException e) {
+			log.warn("플레이리스트 콘텐츠 검색 보강 실패. contentCount={}", contentIds.size(), e);
+			return Map.of();
+		}
 	}
 
 	private Playlist findPlaylistOrThrow(UUID playlistId) {
