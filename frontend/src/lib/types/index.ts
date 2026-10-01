@@ -31,6 +31,20 @@ export type ContentChatDto = {
   content: string;
 };
 
+// Recommendation types
+export interface RecommendationItem {
+  contentId: string;
+  title: string;
+  type: 'MOVIE' | 'TV_SERIES' | 'SPORT';
+  thumbnailUrl?: string | null;
+  tags: string[];
+  semanticScore: number;
+  externalRating: number | null;
+  externalPopularity: number | null;
+  externalVoteCount: number | null;
+  reason: string;
+}
+
 // Playlist types
 export type PlaylistDto = components['schemas']['PlaylistDto'];
 export type PlaylistCreateRequest = components['schemas']['PlaylistCreateRequest'];
@@ -81,7 +95,6 @@ export type CursorResponse =
     | CursorResponseNotificationDto
     | CursorResponseWatchingSessionDto;
 
-
 // Error types
 export type ErrorResponse = components['schemas']['ErrorResponse'];
 
@@ -90,7 +103,6 @@ export type UserRole = 'USER' | 'ADMIN';
 export type ContentType = 'movie' | 'tvSeries' | 'sport';
 export type SortDirection = 'ASCENDING' | 'DESCENDING';
 export type NotificationLevel = 'INFO' | 'WARNING' | 'ERROR';
-
 
 /**
  * API Query Parameter Types

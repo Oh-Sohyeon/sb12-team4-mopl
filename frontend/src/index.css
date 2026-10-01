@@ -310,3 +310,13 @@ body {
     letter-spacing: -0.01375rem; /* -0.22px */
   }
 }
+
+/* Recommendation horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
