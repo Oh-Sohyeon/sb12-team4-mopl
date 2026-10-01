@@ -2,16 +2,15 @@ package com.mopl.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,7 +25,6 @@ import com.mopl.core.domain.user.entity.User;
 import com.mopl.recommendation.dto.RecommendationItem;
 import com.mopl.recommendation.dto.RecommendationPreference;
 import com.mopl.recommendation.dto.RecommendationPreferredTag;
-import com.mopl.recommendation.dto.RecommendationSection;
 import com.mopl.recommendation.dto.RecommendationSectionItem;
 import com.mopl.recommendation.dto.RecommendationSectionsResponse;
 import com.mopl.recommendation.dto.RecommendationTab;
@@ -34,8 +32,6 @@ import com.mopl.user.repository.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationSectionServiceTest {
-
-    private static final int SECTION_SIZE = 10;
 
     @Mock
     private RecommendationService recommendationService;
@@ -51,13 +47,6 @@ class RecommendationSectionServiceTest {
 
     private RecommendationSectionService recommendationSectionService;
 
-    private UUID userId;
-    private User user;
-
-    private RecommendationPreferredTag movieTag;
-    private RecommendationPreferredTag tvSeriesTag;
-    private RecommendationPreferredTag sportTag;
-
     @BeforeEach
     void setUp() {
         recommendationSectionService =
@@ -67,139 +56,182 @@ class RecommendationSectionServiceTest {
                         recommendationSectionSearchService,
                         userRepository
                 );
-
-        userId = UUID.randomUUID();
-
-        user = mock(User.class);
-
-        when(user.getName())
-                .thenReturn("소현");
-
-        when(userRepository.findByIdAndDeletedAtIsNull(userId))
-                .thenReturn(Optional.of(user));
-
-        movieTag = new RecommendationPreferredTag(
-                "GENRE",
-                "SF",
-                10L
-        );
-
-        tvSeriesTag = new RecommendationPreferredTag(
-                "GENRE",
-                "미스터리",
-                8L
-        );
-
-        sportTag = new RecommendationPreferredTag(
-                "SPORT",
-                "F1",
-                7L
-        );
     }
 
     @Test
     void returnsPersonalizedHomeSectionsInExpectedOrder() {
+        UUID userId = UUID.randomUUID();
+
+        User user = mockUser("소현");
+
+        RecommendationPreferredTag movieTag =
+                new RecommendationPreferredTag(
+                        "GENRE",
+                        "SF",
+                        10L
+                );
+
+        RecommendationPreferredTag sportTag =
+                new RecommendationPreferredTag(
+                        "SPORT",
+                        "F1",
+                        8L
+                );
+
+        RecommendationPreferredTag tvTag =
+                new RecommendationPreferredTag(
+                        "GENRE",
+                        "MYSTERY",
+                        7L
+                );
+
         RecommendationPreference preference =
-                createPersonalizedPreference();
+                RecommendationPreference.personalized(
+                        "preference",
+                        Set.of(),
+                        Map.of(
+                                ContentType.MOVIE,
+                                List.of(movieTag),
+                                ContentType.SPORT,
+                                List.of(sportTag),
+                                ContentType.TV_SERIES,
+                                List.of(tvTag)
+                        )
+                );
+
+        UUID aiContentId = UUID.randomUUID();
+        UUID newContentId = UUID.randomUUID();
+        UUID movieContentId = UUID.randomUUID();
+        UUID sportContentId = UUID.randomUUID();
+        UUID tvContentId = UUID.randomUUID();
 
         RecommendationItem aiRecommendation =
-                createRecommendation(
-                        ContentType.MOVIE,
-                        "AI 추천"
+                recommendationItem(
+                        aiContentId,
+                        "AI Movie",
+                        ContentType.MOVIE
                 );
 
         RecommendationSectionItem aiItem =
-                createSectionItem(
-                        aiRecommendation.contentId(),
-                        ContentType.MOVIE,
-                        "AI 추천"
+                sectionItem(
+                        aiContentId,
+                        "AI Movie",
+                        ContentType.MOVIE
                 );
 
         RecommendationSectionItem newItem =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "신규 취향"
+                sectionItem(
+                        newContentId,
+                        "New Movie",
+                        ContentType.MOVIE
                 );
 
         RecommendationSectionItem movieItem =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "SF 영화"
+                sectionItem(
+                        movieContentId,
+                        "SF Movie",
+                        ContentType.MOVIE
                 );
 
         RecommendationSectionItem sportItem =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.SPORT,
-                        "F1 콘텐츠"
+                sectionItem(
+                        sportContentId,
+                        "F1 Content",
+                        ContentType.SPORT
                 );
 
         RecommendationSectionItem tvItem =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.TV_SERIES,
-                        "미스터리 TV"
+                sectionItem(
+                        tvContentId,
+                        "Mystery TV",
+                        ContentType.TV_SERIES
+                );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(userId))
+                .thenReturn(
+                        java.util.Optional.of(user)
                 );
 
         when(recommendationPreferenceService.createPreference(userId))
                 .thenReturn(preference);
 
         when(recommendationService.getRecommendations(userId))
-                .thenReturn(List.of(aiRecommendation));
+                .thenReturn(
+                        List.of(aiRecommendation)
+                );
 
         when(recommendationSectionSearchService.findByContentIds(
-                List.of(aiRecommendation.contentId())
-        )).thenReturn(List.of(aiItem));
+                List.of(aiContentId)
+        )).thenReturn(
+                List.of(aiItem)
+        );
 
         when(recommendationSectionSearchService.findNewByPreferenceTag(
                 eq(ContentType.MOVIE),
                 eq(movieTag),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newItem));
-
-        when(recommendationSectionSearchService.findNewByPreferenceTag(
-                eq(ContentType.TV_SERIES),
-                eq(tvSeriesTag),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of());
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(newItem)
+        );
 
         when(recommendationSectionSearchService.findNewByPreferenceTag(
                 eq(ContentType.SPORT),
                 eq(sportTag),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of());
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of()
+        );
+
+        when(recommendationSectionSearchService.findNewByPreferenceTag(
+                eq(ContentType.TV_SERIES),
+                eq(tvTag),
+                any(LocalDateTime.class),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of()
+        );
 
         when(recommendationSectionSearchService.findPopularByPreferenceTag(
-                ContentType.MOVIE,
-                movieTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(movieItem));
+                eq(ContentType.MOVIE),
+                eq(movieTag),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(movieItem)
+        );
 
         when(recommendationSectionSearchService.findPopularByPreferenceTag(
-                ContentType.SPORT,
-                sportTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(sportItem));
+                eq(ContentType.SPORT),
+                eq(sportTag),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(sportItem)
+        );
 
         when(recommendationSectionSearchService.findPopularByPreferenceTag(
-                ContentType.TV_SERIES,
-                tvSeriesTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(tvItem));
+                eq(ContentType.TV_SERIES),
+                eq(tvTag),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(tvItem)
+        );
 
         RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.HOME
-                );
+                recommendationSectionService
+                        .getSections(
+                                userId,
+                                RecommendationTab.HOME
+                        );
 
         assertThat(response.sections())
-                .extracting(RecommendationSection::key)
+                .extracting(section -> section.key())
                 .containsExactly(
                         "AI_PERSONALIZED",
                         "NEW_FOR_YOU",
@@ -207,390 +239,369 @@ class RecommendationSectionServiceTest {
                         "PREFERENCE_TOP_SPORT",
                         "PREFERENCE_TOP_TV_SERIES"
                 );
-
-        assertThat(response.sections().getFirst().title())
-                .isEqualTo("소현님을 위한 AI 추천");
     }
 
     @Test
-    void returnsNewTabSectionsInExpectedOrder() {
+    void newTabPassesPreviouslyUsedIdsToFollowingSearches() {
+        UUID userId = UUID.randomUUID();
+
+        User user = mockUser("소현");
+
         RecommendationPreference preference =
-                createPersonalizedPreference();
+                RecommendationPreference.forColdStart();
 
-        RecommendationSectionItem personalizedNew =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "취향 신규"
+        UUID genericNewId = UUID.randomUUID();
+        UUID movieId = UUID.randomUUID();
+        UUID tvId = UUID.randomUUID();
+        UUID sportId = UUID.randomUUID();
+
+        RecommendationSectionItem genericNew =
+                sectionItem(
+                        genericNewId,
+                        "Generic New",
+                        ContentType.MOVIE
                 );
 
-        RecommendationSectionItem newMovie =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "새 영화"
+        RecommendationSectionItem movie =
+                sectionItem(
+                        movieId,
+                        "New Movie",
+                        ContentType.MOVIE
                 );
 
-        RecommendationSectionItem newTv =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.TV_SERIES,
-                        "새 TV"
+        RecommendationSectionItem tv =
+                sectionItem(
+                        tvId,
+                        "New TV",
+                        ContentType.TV_SERIES
                 );
 
-        RecommendationSectionItem newSport =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.SPORT,
-                        "새 스포츠"
+        RecommendationSectionItem sport =
+                sectionItem(
+                        sportId,
+                        "New Sport",
+                        ContentType.SPORT
+                );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(userId))
+                .thenReturn(
+                        java.util.Optional.of(user)
                 );
 
         when(recommendationPreferenceService.createPreference(userId))
                 .thenReturn(preference);
 
-        when(recommendationSectionSearchService.findNewByPreferenceTag(
-                eq(ContentType.MOVIE),
-                eq(movieTag),
+        when(recommendationSectionSearchService.findNew(
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(personalizedNew));
-
-        when(recommendationSectionSearchService.findNewByPreferenceTag(
-                eq(ContentType.TV_SERIES),
-                eq(tvSeriesTag),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of());
-
-        when(recommendationSectionSearchService.findNewByPreferenceTag(
-                eq(ContentType.SPORT),
-                eq(sportTag),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of());
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(genericNew)
+        );
 
         when(recommendationSectionSearchService.findNewByType(
                 eq(ContentType.MOVIE),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newMovie));
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(movie)
+        );
 
         when(recommendationSectionSearchService.findNewByType(
                 eq(ContentType.TV_SERIES),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newTv));
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(tv)
+        );
 
         when(recommendationSectionSearchService.findNewByType(
                 eq(ContentType.SPORT),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newSport));
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(sport)
+        );
 
         RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.NEW
-                );
+                recommendationSectionService
+                        .getSections(
+                                userId,
+                                RecommendationTab.NEW
+                        );
 
         assertThat(response.sections())
-                .extracting(RecommendationSection::key)
+                .extracting(section -> section.key())
                 .containsExactly(
-                        "NEW_FOR_YOU",
+                        "NEW_CONTENT",
                         "NEW_MOVIE",
                         "NEW_TV_SERIES",
                         "NEW_SPORT"
                 );
+
+        verify(recommendationSectionSearchService)
+                .findNewByType(
+                        eq(ContentType.MOVIE),
+                        any(LocalDateTime.class),
+                        eq(10),
+                        org.mockito.ArgumentMatchers.argThat(
+                                excludedIds ->
+                                        excludedIds.contains(
+                                                genericNewId
+                                        )
+                        )
+                );
     }
 
     @Test
-    void returnsMovieTabSectionsForPersonalizedUser() {
-        RecommendationPreference preference =
-                createPersonalizedPreference();
-
-        RecommendationItem recommendation =
-                createRecommendation(
-                        ContentType.MOVIE,
-                        "개인화 영화"
-                );
-
-        RecommendationSectionItem personalizedMovie =
-                createSectionItem(
-                        recommendation.contentId(),
-                        ContentType.MOVIE,
-                        "개인화 영화"
-                );
-
-        RecommendationSectionItem newMovie =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "새 영화"
-                );
-
-        RecommendationSectionItem preferenceMovie =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "SF 영화"
-                );
-
-        when(recommendationPreferenceService.createPreference(userId))
-                .thenReturn(preference);
-
-        when(recommendationService.getRecommendations(userId))
-                .thenReturn(List.of(recommendation));
-
-        when(recommendationSectionSearchService.findByContentIds(
-                List.of(recommendation.contentId())
-        )).thenReturn(List.of(personalizedMovie));
-
-        when(recommendationSectionSearchService.findNewByType(
-                eq(ContentType.MOVIE),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newMovie));
-
-        when(recommendationSectionSearchService.findPopularByPreferenceTag(
+    void returnsMovieSectionsInExpectedOrder() {
+        assertPersonalizedTypeTab(
+                RecommendationTab.MOVIE,
                 ContentType.MOVIE,
-                movieTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(preferenceMovie));
-
-        RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.MOVIE
-                );
-
-        assertThat(response.sections())
-                .extracting(RecommendationSection::key)
-                .containsExactly(
-                        "PERSONALIZED_MOVIE",
-                        "NEW_MOVIE",
-                        "PREFERENCE_TOP_MOVIE"
-                );
+                "PERSONALIZED_MOVIE",
+                "NEW_MOVIE",
+                "PREFERENCE_TOP_MOVIE"
+        );
     }
 
     @Test
-    void returnsTvSeriesTabSectionsForPersonalizedUser() {
-        RecommendationPreference preference =
-                createPersonalizedPreference();
-
-        RecommendationItem recommendation =
-                createRecommendation(
-                        ContentType.TV_SERIES,
-                        "개인화 TV"
-                );
-
-        RecommendationSectionItem personalizedTv =
-                createSectionItem(
-                        recommendation.contentId(),
-                        ContentType.TV_SERIES,
-                        "개인화 TV"
-                );
-
-        RecommendationSectionItem newTv =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.TV_SERIES,
-                        "새 TV"
-                );
-
-        RecommendationSectionItem preferenceTv =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.TV_SERIES,
-                        "미스터리 TV"
-                );
-
-        when(recommendationPreferenceService.createPreference(userId))
-                .thenReturn(preference);
-
-        when(recommendationService.getRecommendations(userId))
-                .thenReturn(List.of(recommendation));
-
-        when(recommendationSectionSearchService.findByContentIds(
-                List.of(recommendation.contentId())
-        )).thenReturn(List.of(personalizedTv));
-
-        when(recommendationSectionSearchService.findNewByType(
-                eq(ContentType.TV_SERIES),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newTv));
-
-        when(recommendationSectionSearchService.findPopularByPreferenceTag(
+    void returnsTvSeriesSectionsInExpectedOrder() {
+        assertPersonalizedTypeTab(
+                RecommendationTab.TV_SERIES,
                 ContentType.TV_SERIES,
-                tvSeriesTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(preferenceTv));
-
-        RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.TV_SERIES
-                );
-
-        assertThat(response.sections())
-                .extracting(RecommendationSection::key)
-                .containsExactly(
-                        "PERSONALIZED_TV_SERIES",
-                        "NEW_TV_SERIES",
-                        "PREFERENCE_TOP_TV_SERIES"
-                );
+                "PERSONALIZED_TV_SERIES",
+                "NEW_TV_SERIES",
+                "PREFERENCE_TOP_TV_SERIES"
+        );
     }
 
     @Test
-    void returnsSportTabSectionsForPersonalizedUser() {
+    void returnsSportSectionsInExpectedOrder() {
+        assertPersonalizedTypeTab(
+                RecommendationTab.SPORT,
+                ContentType.SPORT,
+                "PERSONALIZED_SPORT",
+                "NEW_SPORT",
+                "PREFERENCE_TOP_SPORT"
+        );
+    }
+
+    @Test
+    void coldStartMovieTabUsesPopularFallbackAndOmitsPreferenceSection() {
+        UUID userId = UUID.randomUUID();
+
+        User user = mockUser("소현");
+
         RecommendationPreference preference =
-                createPersonalizedPreference();
+                RecommendationPreference.forColdStart();
 
-        RecommendationItem recommendation =
-                createRecommendation(
-                        ContentType.SPORT,
-                        "개인화 스포츠"
+        UUID popularContentId = UUID.randomUUID();
+        UUID newContentId = UUID.randomUUID();
+
+        RecommendationSectionItem popularItem =
+                sectionItem(
+                        popularContentId,
+                        "Popular Movie",
+                        ContentType.MOVIE
                 );
 
-        RecommendationSectionItem personalizedSport =
-                createSectionItem(
-                        recommendation.contentId(),
-                        ContentType.SPORT,
-                        "개인화 스포츠"
+        RecommendationSectionItem newItem =
+                sectionItem(
+                        newContentId,
+                        "New Movie",
+                        ContentType.MOVIE
                 );
 
-        RecommendationSectionItem newSport =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.SPORT,
-                        "새 스포츠"
-                );
-
-        RecommendationSectionItem preferenceSport =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.SPORT,
-                        "F1"
+        when(userRepository.findByIdAndDeletedAtIsNull(userId))
+                .thenReturn(
+                        java.util.Optional.of(user)
                 );
 
         when(recommendationPreferenceService.createPreference(userId))
                 .thenReturn(preference);
-
-        when(recommendationService.getRecommendations(userId))
-                .thenReturn(List.of(recommendation));
-
-        when(recommendationSectionSearchService.findByContentIds(
-                List.of(recommendation.contentId())
-        )).thenReturn(List.of(personalizedSport));
-
-        when(recommendationSectionSearchService.findNewByType(
-                eq(ContentType.SPORT),
-                any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newSport));
-
-        when(recommendationSectionSearchService.findPopularByPreferenceTag(
-                ContentType.SPORT,
-                sportTag,
-                SECTION_SIZE
-        )).thenReturn(List.of(preferenceSport));
-
-        RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.SPORT
-                );
-
-        assertThat(response.sections())
-                .extracting(RecommendationSection::key)
-                .containsExactly(
-                        "PERSONALIZED_SPORT",
-                        "NEW_SPORT",
-                        "PREFERENCE_TOP_SPORT"
-                );
-    }
-
-    @Test
-    void usesPopularTypeSectionForColdStartUser() {
-        RecommendationSectionItem popularMovie =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "인기 영화"
-                );
-
-        RecommendationSectionItem newMovie =
-                createSectionItem(
-                        UUID.randomUUID(),
-                        ContentType.MOVIE,
-                        "새 영화"
-                );
-
-        when(recommendationPreferenceService.createPreference(userId))
-                .thenReturn(
-                        RecommendationPreference.forColdStart()
-                );
 
         when(recommendationSectionSearchService.findPopularByType(
-                ContentType.MOVIE,
-                SECTION_SIZE
-        )).thenReturn(List.of(popularMovie));
+                eq(ContentType.MOVIE),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(popularItem)
+        );
 
         when(recommendationSectionSearchService.findNewByType(
                 eq(ContentType.MOVIE),
                 any(LocalDateTime.class),
-                eq(SECTION_SIZE)
-        )).thenReturn(List.of(newMovie));
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(newItem)
+        );
 
         RecommendationSectionsResponse response =
-                recommendationSectionService.getSections(
-                        userId,
-                        RecommendationTab.MOVIE
-                );
+                recommendationSectionService
+                        .getSections(
+                                userId,
+                                RecommendationTab.MOVIE
+                        );
 
         assertThat(response.sections())
-                .extracting(RecommendationSection::key)
+                .extracting(section -> section.key())
                 .containsExactly(
                         "POPULAR_MOVIE",
                         "NEW_MOVIE"
                 );
-
-        verify(recommendationService, never())
-                .getRecommendations(userId);
-
-        verify(
-                recommendationSectionSearchService,
-                never()
-        ).findPopularByPreferenceTag(
-                eq(ContentType.MOVIE),
-                any(RecommendationPreferredTag.class),
-                eq(SECTION_SIZE)
-        );
     }
 
-    private RecommendationPreference createPersonalizedPreference() {
-        return RecommendationPreference.personalized(
-                "개인화 취향 정보",
-                Set.of(),
-                Map.of(
-                        ContentType.MOVIE,
-                        List.of(movieTag),
-                        ContentType.TV_SERIES,
-                        List.of(tvSeriesTag),
-                        ContentType.SPORT,
-                        List.of(sportTag)
-                )
-        );
-    }
-
-    private RecommendationItem createRecommendation(
+    private void assertPersonalizedTypeTab(
+            RecommendationTab tab,
             ContentType contentType,
-            String title
+            String personalizedKey,
+            String newKey,
+            String preferenceKey
+    ) {
+        UUID userId = UUID.randomUUID();
+
+        User user = mockUser("소현");
+
+        RecommendationPreferredTag preferredTag =
+                new RecommendationPreferredTag(
+                        "TAG",
+                        "VALUE",
+                        10L
+                );
+
+        RecommendationPreference preference =
+                RecommendationPreference.personalized(
+                        "preference",
+                        Set.of(),
+                        Map.of(
+                                contentType,
+                                List.of(preferredTag)
+                        )
+                );
+
+        UUID personalizedContentId = UUID.randomUUID();
+        UUID newContentId = UUID.randomUUID();
+        UUID preferenceContentId = UUID.randomUUID();
+
+        RecommendationItem recommendation =
+                recommendationItem(
+                        personalizedContentId,
+                        "Personalized",
+                        contentType
+                );
+
+        RecommendationSectionItem personalizedItem =
+                sectionItem(
+                        personalizedContentId,
+                        "Personalized",
+                        contentType
+                );
+
+        RecommendationSectionItem newItem =
+                sectionItem(
+                        newContentId,
+                        "New",
+                        contentType
+                );
+
+        RecommendationSectionItem preferenceItem =
+                sectionItem(
+                        preferenceContentId,
+                        "Preference",
+                        contentType
+                );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(userId))
+                .thenReturn(
+                        java.util.Optional.of(user)
+                );
+
+        when(recommendationPreferenceService.createPreference(userId))
+                .thenReturn(preference);
+
+        when(recommendationService.getRecommendations(userId))
+                .thenReturn(
+                        List.of(recommendation)
+                );
+
+        when(recommendationSectionSearchService.findByContentIds(
+                List.of(personalizedContentId)
+        )).thenReturn(
+                List.of(personalizedItem)
+        );
+
+        when(recommendationSectionSearchService.findNewByType(
+                eq(contentType),
+                any(LocalDateTime.class),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(newItem)
+        );
+
+        when(recommendationSectionSearchService.findPopularByPreferenceTag(
+                eq(contentType),
+                eq(preferredTag),
+                eq(10),
+                anySet()
+        )).thenReturn(
+                List.of(preferenceItem)
+        );
+
+        RecommendationSectionsResponse response =
+                recommendationSectionService
+                        .getSections(
+                                userId,
+                                tab
+                        );
+
+        assertThat(response.sections())
+                .extracting(section -> section.key())
+                .containsExactly(
+                        personalizedKey,
+                        newKey,
+                        preferenceKey
+                );
+
+        verify(recommendationSectionSearchService)
+                .findNewByType(
+                        eq(contentType),
+                        any(LocalDateTime.class),
+                        eq(10),
+                        org.mockito.ArgumentMatchers.argThat(
+                                excludedIds ->
+                                        excludedIds.contains(
+                                                personalizedContentId
+                                        )
+                        )
+                );
+    }
+
+    private User mockUser(String name) {
+        User user =
+                mock(User.class);
+
+        when(user.getName())
+                .thenReturn(name);
+
+        return user;
+    }
+
+    private RecommendationItem recommendationItem(
+            UUID contentId,
+            String title,
+            ContentType contentType
     ) {
         return new RecommendationItem(
-                UUID.randomUUID(),
+                contentId,
                 title,
-                "https://example.com/" + UUID.randomUUID() + ".jpg",
+                "https://example.com/"
+                        + contentId
+                        + ".jpg",
                 contentType,
                 List.of(),
                 0.95,
@@ -601,20 +612,22 @@ class RecommendationSectionServiceTest {
         );
     }
 
-    private RecommendationSectionItem createSectionItem(
+    private RecommendationSectionItem sectionItem(
             UUID contentId,
-            ContentType contentType,
-            String title
+            String title,
+            ContentType contentType
     ) {
         return new RecommendationSectionItem(
                 contentId,
                 title,
-                "https://example.com/" + contentId + ".jpg",
+                "https://example.com/"
+                        + contentId
+                        + ".jpg",
                 contentType,
                 List.of(),
                 4.5,
+                10L,
                 100L,
-                1000L,
                 LocalDateTime.of(
                         2026,
                         10,

@@ -3,9 +3,11 @@ package com.mopl.recommendation.service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,7 +42,164 @@ public class RecommendationSectionSearchService {
     private final ElasticsearchOperations elasticsearchOperations;
     private final ContentRepository contentRepository;
 
-    // 기존 AI 추천 결과의 contentId 순서를 유지하면서 Section 카드 DTO로 변환
+    public List<RecommendationSectionItem> findPopular(int size) {
+        return findPopular(size, Set.of());
+    }
+
+    public List<RecommendationSectionItem> findPopular(
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                null,
+                null,
+                null,
+                null,
+                size,
+                buildPopularitySort(),
+                excludedContentIds
+        );
+    }
+
+    public List<RecommendationSectionItem> findPopularByType(
+            ContentType contentType,
+            int size
+    ) {
+        return findPopularByType(contentType, size, Set.of());
+    }
+
+    public List<RecommendationSectionItem> findPopularByType(
+            ContentType contentType,
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                contentType,
+                null,
+                null,
+                null,
+                size,
+                buildPopularitySort(),
+                excludedContentIds
+        );
+    }
+
+    public List<RecommendationSectionItem> findPopularByPreferenceTag(
+            ContentType contentType,
+            RecommendationPreferredTag preferredTag,
+            int size
+    ) {
+        return findPopularByPreferenceTag(
+                contentType,
+                preferredTag,
+                size,
+                Set.of()
+        );
+    }
+
+    public List<RecommendationSectionItem> findPopularByPreferenceTag(
+            ContentType contentType,
+            RecommendationPreferredTag preferredTag,
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                contentType,
+                preferredTag,
+                null,
+                null,
+                size,
+                buildPopularitySort(),
+                excludedContentIds
+        );
+    }
+
+    public List<RecommendationSectionItem> findNew(
+            LocalDateTime createdAfter,
+            int size
+    ) {
+        return findNew(createdAfter, size, Set.of());
+    }
+
+    public List<RecommendationSectionItem> findNew(
+            LocalDateTime createdAfter,
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                null,
+                null,
+                createdAfter,
+                null,
+                size,
+                buildNewestSort(),
+                excludedContentIds
+        );
+    }
+
+    public List<RecommendationSectionItem> findNewByType(
+            ContentType contentType,
+            LocalDateTime createdAfter,
+            int size
+    ) {
+        return findNewByType(
+                contentType,
+                createdAfter,
+                size,
+                Set.of()
+        );
+    }
+
+    public List<RecommendationSectionItem> findNewByType(
+            ContentType contentType,
+            LocalDateTime createdAfter,
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                contentType,
+                null,
+                createdAfter,
+                null,
+                size,
+                buildNewestSort(),
+                excludedContentIds
+        );
+    }
+
+    public List<RecommendationSectionItem> findNewByPreferenceTag(
+            ContentType contentType,
+            RecommendationPreferredTag preferredTag,
+            LocalDateTime createdAfter,
+            int size
+    ) {
+        return findNewByPreferenceTag(
+                contentType,
+                preferredTag,
+                createdAfter,
+                size,
+                Set.of()
+        );
+    }
+
+    public List<RecommendationSectionItem> findNewByPreferenceTag(
+            ContentType contentType,
+            RecommendationPreferredTag preferredTag,
+            LocalDateTime createdAfter,
+            int size,
+            Set<UUID> excludedContentIds
+    ) {
+        return search(
+                contentType,
+                preferredTag,
+                createdAfter,
+                null,
+                size,
+                buildPopularitySort(),
+                excludedContentIds
+        );
+    }
+
     public List<RecommendationSectionItem> findByContentIds(
             List<UUID> contentIds
     ) {
@@ -48,25 +207,23 @@ public class RecommendationSectionSearchService {
             return List.of();
         }
 
-        // AI 추천 결과의 중복 ID를 제거하고 Section 최대 크기인 10개까지만 조회
-        List<UUID> limitedContentIds = contentIds.stream()
+        List<UUID> orderedContentIds = contentIds.stream()
+                .filter(Objects::nonNull)
                 .distinct()
                 .limit(MAX_SECTION_SIZE)
                 .toList();
 
-        List<String> elasticsearchIds = limitedContentIds.stream()
+        if (orderedContentIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> elasticsearchIds = orderedContentIds.stream()
                 .map(UUID::toString)
                 .toList();
 
-        // 기존 추천 결과의 콘텐츠 ID들에 해당하는 Elasticsearch 문서 조회
         NativeQuery query = NativeQuery.builder()
-                .withQuery(Query.of(q -> q.ids(ids -> ids
-                        .values(elasticsearchIds)
-                )))
-                .withPageable(PageRequest.of(
-                        0,
-                        limitedContentIds.size()
-                ))
+                .withQuery(Query.of(q -> q.ids(ids -> ids.values(elasticsearchIds))))
+                .withPageable(PageRequest.of(0, orderedContentIds.size()))
                 .build();
 
         SearchHits<ContentSearchDocument> searchHits =
@@ -79,26 +236,27 @@ public class RecommendationSectionSearchService {
             return List.of();
         }
 
-        // Elasticsearch 문서를 contentId 기준으로 빠르게 조회할 수 있도록 Map 구성
         Map<UUID, ContentSearchDocument> documentById =
                 searchHits.getSearchHits().stream()
                         .map(SearchHit::getContent)
                         .collect(Collectors.toMap(
                                 document -> UUID.fromString(document.getId()),
-                                document -> document
+                                document -> document,
+                                (left, right) -> left
                         ));
 
-        // MySQL에서 실제 존재하며 삭제되지 않은 콘텐츠만 조회
-        Map<UUID, Content> contentById = contentRepository
-                .findAllByIdInAndDeletedAtIsNull(limitedContentIds)
-                .stream()
+        List<Content> contents =
+                contentRepository.findAllByIdInAndDeletedAtIsNull(
+                        orderedContentIds
+                );
+
+        Map<UUID, Content> contentById = contents.stream()
                 .collect(Collectors.toMap(
                         Content::getId,
                         content -> content
                 ));
 
-        // Elasticsearch 반환 순서가 아니라 기존 AI 추천 순서를 그대로 유지
-        return limitedContentIds.stream()
+        return orderedContentIds.stream()
                 .map(contentId -> {
                     Content content = contentById.get(contentId);
                     ContentSearchDocument document = documentById.get(contentId);
@@ -116,107 +274,22 @@ public class RecommendationSectionSearchService {
                 .toList();
     }
 
-    // 전체 인기 콘텐츠 조회
-    public List<RecommendationSectionItem> findPopular(int size) {
-        return search(
-                null,
-                null,
-                null,
-                null,
-                size,
-                buildPopularitySort()
-        );
-    }
-
-    // 특정 콘텐츠 타입의 인기 콘텐츠 조회
-    public List<RecommendationSectionItem> findPopularByType(
-            ContentType contentType,
-            int size
-    ) {
-        return search(
-                contentType,
-                null,
-                null,
-                null,
-                size,
-                buildPopularitySort()
-        );
-    }
-
-    // 특정 콘텐츠 타입 + 선호 태그 기준 TOP 콘텐츠 조회
-    public List<RecommendationSectionItem> findPopularByPreferenceTag(
-            ContentType contentType,
-            RecommendationPreferredTag preferredTag,
-            int size
-    ) {
-        return search(
-                contentType,
-                preferredTag,
-                null,
-                null,
-                size,
-                buildPopularitySort()
-        );
-    }
-
-    // 최근 MOPL DB에 추가된 전체 콘텐츠 조회
-    public List<RecommendationSectionItem> findNew(
-            LocalDateTime createdAfter,
-            int size
-    ) {
-        return search(
-                null,
-                null,
-                createdAfter,
-                null,
-                size,
-                buildNewestSort()
-        );
-    }
-
-    // 최근 MOPL DB에 등록된 특정 타입 콘텐츠 조회
-    public List<RecommendationSectionItem> findNewByType(
-            ContentType contentType,
-            LocalDateTime createdAfter,
-            int size
-    ) {
-        return search(
-                contentType,
-                null,
-                createdAfter,
-                null,
-                size,
-                buildNewestSort()
-        );
-    }
-
-    // 신규 콘텐츠 중 특정 타입 + 선호 태그 조건 조회
-    public List<RecommendationSectionItem> findNewByPreferenceTag(
-            ContentType contentType,
-            RecommendationPreferredTag preferredTag,
-            LocalDateTime createdAfter,
-            int size
-    ) {
-        return search(
-                contentType,
-                preferredTag,
-                createdAfter,
-                null,
-                size,
-                buildPopularitySort()
-        );
-    }
-
-    // 공통 Section 검색 진입점
     private List<RecommendationSectionItem> search(
             ContentType contentType,
             RecommendationPreferredTag preferredTag,
             LocalDateTime createdAfter,
             LocalDateTime createdBefore,
             int requestedSize,
-            Sort sort
+            Sort sort,
+            Set<UUID> excludedContentIds
     ) {
         int size = normalizeSize(requestedSize);
+
+        Set<UUID> seenContentIds = new HashSet<>();
+
+        if (excludedContentIds != null) {
+            seenContentIds.addAll(excludedContentIds);
+        }
 
         List<Query> filters = buildFilters(
                 contentType,
@@ -225,33 +298,85 @@ public class RecommendationSectionSearchService {
                 createdBefore
         );
 
+        List<RecommendationSectionItem> results =
+                new ArrayList<>(size);
+
+        int page = 0;
+
+        while (results.size() < size) {
+            SearchHits<ContentSearchDocument> searchHits =
+                    searchPage(
+                            filters,
+                            page,
+                            size,
+                            sort
+                    );
+
+            List<SearchHit<ContentSearchDocument>> hitList =
+                    searchHits.getSearchHits();
+
+            if (hitList.isEmpty()) {
+                break;
+            }
+
+            List<RecommendationSectionItem> pageItems =
+                    toSectionItems(
+                            hitList,
+                            seenContentIds
+                    );
+
+            for (RecommendationSectionItem item : pageItems) {
+                if (!seenContentIds.add(item.contentId())) {
+                    continue;
+                }
+
+                results.add(item);
+
+                if (results.size() >= size) {
+                    break;
+                }
+            }
+
+            if (hitList.size() < size) {
+                break;
+            }
+
+            page++;
+        }
+
+        return List.copyOf(results);
+    }
+
+    private SearchHits<ContentSearchDocument> searchPage(
+            List<Query> filters,
+            int page,
+            int pageSize,
+            Sort sort
+    ) {
         NativeQueryBuilder queryBuilder = NativeQuery.builder()
-                .withQuery(Query.of(query -> query.matchAll(matchAll -> matchAll)))
+                .withQuery(Query.of(
+                        query -> query.matchAll(matchAll -> matchAll)
+                ))
                 .withPageable(PageRequest.of(
-                        0,
-                        size,
+                        page,
+                        pageSize,
                         sort
                 ));
 
         if (!filters.isEmpty()) {
             queryBuilder.withFilter(
-                    Query.of(query -> query.bool(bool -> bool.filter(filters)))
+                    Query.of(query -> query.bool(
+                            bool -> bool.filter(filters)
+                    ))
             );
         }
 
-        SearchHits<ContentSearchDocument> searchHits =
-                elasticsearchOperations.search(
-                        queryBuilder.build(),
-                        ContentSearchDocument.class
-                );
-
-        return toSectionItems(
-                searchHits,
-                size
+        return elasticsearchOperations.search(
+                queryBuilder.build(),
+                ContentSearchDocument.class
         );
     }
 
-    // type / tag / createdAt 조건을 Elasticsearch filter로 변환
     private List<Query> buildFilters(
             ContentType contentType,
             RecommendationPreferredTag preferredTag,
@@ -290,7 +415,6 @@ public class RecommendationSectionSearchService {
         return filters;
     }
 
-    // nested tags 내부의 tag/value가 같은 객체에서 일치하도록 검색
     private Query buildTagFilter(
             String tag,
             String value
@@ -305,8 +429,8 @@ public class RecommendationSectionSearchService {
                 .value(value)
         ));
 
-        Query tagAndValueFilter = Query.of(query -> query.bool(bool -> bool
-                .filter(List.of(
+        Query tagAndValueFilter = Query.of(query -> query.bool(
+                bool -> bool.filter(List.of(
                         tagFilter,
                         valueFilter
                 ))
@@ -318,7 +442,6 @@ public class RecommendationSectionSearchService {
         ));
     }
 
-    // releaseDate가 아니라 MOPL DB 등록 시각인 createdAt 기준
     private Query buildCreatedAtFilter(
             LocalDateTime createdAfter,
             LocalDateTime createdBefore
@@ -342,37 +465,46 @@ public class RecommendationSectionSearchService {
         })));
     }
 
-    // [#90 추가]
-    // Elasticsearch 결과 순서를 유지하면서 MySQL에서 삭제된 콘텐츠를 제거
     private List<RecommendationSectionItem> toSectionItems(
-            SearchHits<ContentSearchDocument> searchHits,
-            int size
+            List<SearchHit<ContentSearchDocument>> searchHits,
+            Set<UUID> excludedContentIds
     ) {
-        if (searchHits.isEmpty()) {
+        List<SearchHit<ContentSearchDocument>> eligibleHits =
+                searchHits.stream()
+                        .filter(searchHit -> {
+                            UUID contentId = UUID.fromString(
+                                    searchHit.getContent().getId()
+                            );
+
+                            return !excludedContentIds.contains(contentId);
+                        })
+                        .toList();
+
+        if (eligibleHits.isEmpty()) {
             return List.of();
         }
 
-        List<UUID> contentIds = searchHits.getSearchHits().stream()
+        List<UUID> contentIds = eligibleHits.stream()
                 .map(SearchHit::getContent)
                 .map(ContentSearchDocument::getId)
                 .map(UUID::fromString)
                 .toList();
 
-        Map<UUID, Content> contentById = contentRepository
-                .findAllByIdInAndDeletedAtIsNull(contentIds)
-                .stream()
-                .collect(Collectors.toMap(
-                        Content::getId,
-                        content -> content
-                ));
+        Map<UUID, Content> contentById =
+                contentRepository
+                        .findAllByIdInAndDeletedAtIsNull(contentIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                Content::getId,
+                                content -> content
+                        ));
 
-        return searchHits.getSearchHits().stream()
+        return eligibleHits.stream()
                 .map(searchHit -> toSectionItem(
                         searchHit,
                         contentById
                 ))
                 .filter(Objects::nonNull)
-                .limit(size)
                 .toList();
     }
 
@@ -380,11 +512,11 @@ public class RecommendationSectionSearchService {
             SearchHit<ContentSearchDocument> searchHit,
             Map<UUID, Content> contentById
     ) {
-        ContentSearchDocument searchDocument =
+        ContentSearchDocument document =
                 searchHit.getContent();
 
         UUID contentId =
-                UUID.fromString(searchDocument.getId());
+                UUID.fromString(document.getId());
 
         Content content =
                 contentById.get(contentId);
@@ -395,11 +527,10 @@ public class RecommendationSectionSearchService {
 
         return RecommendationSectionItem.from(
                 content,
-                searchDocument
+                document
         );
     }
 
-    // Section 응답은 어떤 호출에서도 10개를 넘지 않도록 서비스 레벨에서 보장
     private int normalizeSize(int requestedSize) {
         if (requestedSize <= 0) {
             return MAX_SECTION_SIZE;
@@ -411,7 +542,6 @@ public class RecommendationSectionSearchService {
         );
     }
 
-    // 기존 ColdStartRecommendationService와 동일한 인기 정렬 기준 사용
     private Sort buildPopularitySort() {
         return Sort.by(
                 Sort.Order.desc("watcherCount"),
@@ -424,7 +554,6 @@ public class RecommendationSectionSearchService {
         );
     }
 
-    // 신규 콘텐츠는 MOPL DB 등록일 내림차순 + id tie-breaker
     private Sort buildNewestSort() {
         return Sort.by(
                 Sort.Order.desc("createdAt"),
