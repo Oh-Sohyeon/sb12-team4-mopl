@@ -11,12 +11,10 @@ import {
 
 interface AiPlaylistChatProps {
     initialSessionId: string | null;
-    onSessionCreated?: (sessionId: string) => void;
 }
 
 export default function AiPlaylistChat({
                                            initialSessionId,
-                                           onSessionCreated,
                                        }: AiPlaylistChatProps) {
     const [sessionId, setSessionId] = useState<string | null>(
         initialSessionId,
@@ -116,7 +114,6 @@ export default function AiPlaylistChat({
                 currentSessionId = await createAiPlaylistSession();
 
                 setSessionId(currentSessionId);
-                onSessionCreated?.(currentSessionId);
             }
 
             const response = await sendAiPlaylistMessage(

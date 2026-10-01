@@ -116,7 +116,6 @@ export default function AiPlaylist() {
                     {view === 'chat' ? (
                         <AiPlaylistChat
                             initialSessionId={selectedSessionId}
-                            onSessionCreated={setSelectedSessionId}
                         />
                     ) : (
                         <AiPlaylistSessionList onSelect={openSession} />
