@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Send } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -25,26 +25,52 @@ export default function AiPlaylistChat({
     const [isHistoryLoading, setIsHistoryLoading] = useState(
         initialSessionId !== null,
     );
+    const [pagination, setPagination] = useState<{
+        nextCursor: string | null;
+        nextIdAfter: string | null;
+        hasNext: boolean;
+    }>({ nextCursor: null, nextIdAfter: null, hasNext: false });
+    const [isOlderLoading, setIsOlderLoading] = useState(false);
+    const requestVersionRef = useRef(0);
+    const olderLoadingRef = useRef(false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const scrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
+        const anchor = scrollAnchorRef.current;
+        const scroll = scrollRef.current;
+        if (anchor && scroll) {
+            scroll.scrollTop = anchor.top + scroll.scrollHeight - anchor.height;
+            scrollAnchorRef.current = null;
+            return;
+        }
         messagesEndRef.current?.scrollIntoView({
             behavior: 'smooth',
             block: 'end',
         });
-    }, [messages, isLoading]);
+    }, [messages, isLoading, isHistoryLoading]);
 
     useEffect(() => {
         setSessionId(initialSessionId);
         setMessages([]);
         setInput('');
         setError(null);
+        const requestVersion = requestVersionRef;
+        const version = ++requestVersion.current;
+        setPagination({ nextCursor: null, nextIdAfter: null, hasNext: false });
+        setIsOlderLoading(false);
+        olderLoadingRef.current = false;
+        scrollAnchorRef.current = null;
+        setIsLoading(false);
 
         if (!initialSessionId) {
             setIsHistoryLoading(false);
-            return;
+            return () => {
+                if (requestVersion.current === version) requestVersion.current++;
+            };
         }
 
         let cancelled = false;
@@ -57,12 +83,16 @@ export default function AiPlaylistChat({
                     initialSessionId,
                     {
                         limit: 100,
-                        sortDirection: 'ASCENDING',
+                        sortDirection: 'DESCENDING',
                     },
                 );
 
                 if (!cancelled) {
-                    setMessages(response.data);
+                    const uniqueMessages = new Map(
+                        response.data.map((message) => [message.id, message]),
+                    );
+                    setMessages([...uniqueMessages.values()].reverse());
+                    setPagination(response);
                 }
             } catch {
                 if (!cancelled) {
@@ -79,8 +109,58 @@ export default function AiPlaylistChat({
 
         return () => {
             cancelled = true;
+            if (requestVersion.current === version) requestVersion.current++;
         };
     }, [initialSessionId]);
+
+    const loadOlderMessages = async () => {
+        if (
+            !sessionId || !pagination.hasNext || !pagination.nextCursor ||
+            !pagination.nextIdAfter || olderLoadingRef.current
+        ) {
+            return;
+        }
+
+        const version = requestVersionRef.current;
+        olderLoadingRef.current = true;
+        setIsOlderLoading(true);
+        setError(null);
+        try {
+            const response = await getAiPlaylistMessages(sessionId, {
+                limit: 100,
+                sortDirection: 'DESCENDING',
+                cursor: pagination.nextCursor,
+                idAfter: pagination.nextIdAfter,
+            });
+            if (version !== requestVersionRef.current) return;
+            const scroll = scrollRef.current;
+            if (scroll) {
+                scrollAnchorRef.current = {
+                    height: scroll.scrollHeight,
+                    top: scroll.scrollTop,
+                };
+            }
+            setMessages((previous) => {
+                const seen = new Set(previous.map((message) => message.id));
+                const older = response.data.filter((message) => {
+                    if (seen.has(message.id)) return false;
+                    seen.add(message.id);
+                    return true;
+                }).reverse();
+                return [...older, ...previous];
+            });
+            setPagination(response);
+        } catch {
+            if (version === requestVersionRef.current) {
+                setError('이전 메시지를 불러오지 못했어요. 다시 시도해주세요.');
+            }
+        } finally {
+            if (version === requestVersionRef.current) {
+                olderLoadingRef.current = false;
+                setIsOlderLoading(false);
+            }
+        }
+    };
 
     const handleSubmit = async (
         event: FormEvent<HTMLFormElement>,
@@ -89,10 +169,11 @@ export default function AiPlaylistChat({
 
         const message = input.trim();
 
-        if (!message || isLoading) {
+        if (!message || isLoading || isHistoryLoading) {
             return;
         }
 
+        const version = requestVersionRef.current;
         setInput('');
         setError(null);
 
@@ -113,6 +194,7 @@ export default function AiPlaylistChat({
             if (!currentSessionId) {
                 currentSessionId = await createAiPlaylistSession();
 
+                if (version !== requestVersionRef.current) return;
                 setSessionId(currentSessionId);
             }
 
@@ -120,6 +202,8 @@ export default function AiPlaylistChat({
                 currentSessionId,
                 message,
             );
+
+            if (version !== requestVersionRef.current) return;
 
             const assistantMessage: AiPlaylistMessage = {
                 id: `temp-assistant-${Date.now()}`,
@@ -133,11 +217,12 @@ export default function AiPlaylistChat({
                 assistantMessage,
             ]);
         } catch {
+            if (version !== requestVersionRef.current) return;
             setError(
                 '요청에 실패했어요. 잠시 후 다시 시도해주세요.',
             );
         } finally {
-            setIsLoading(false);
+            if (version === requestVersionRef.current) setIsLoading(false);
         }
     };
 
@@ -151,7 +236,7 @@ export default function AiPlaylistChat({
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">
-            <div className="ai-chat-scroll flex-1 overflow-y-auto p-4">
+            <div ref={scrollRef} className="ai-chat-scroll flex-1 overflow-y-auto p-4">
                 {messages.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-center">
                         <div>
@@ -166,6 +251,17 @@ export default function AiPlaylistChat({
                     </div>
                 ) : (
                     <div className="flex flex-col gap-3">
+                        {pagination.hasNext && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                disabled={isOlderLoading}
+                                onClick={() => void loadOlderMessages()}
+                                className="self-center text-gray-400"
+                            >
+                                {isOlderLoading ? '이전 메시지를 불러오는 중...' : '이전 메시지 더 보기'}
+                            </Button>
+                        )}
                         {messages.map((message) => (
                             <div
                                 key={message.id}
