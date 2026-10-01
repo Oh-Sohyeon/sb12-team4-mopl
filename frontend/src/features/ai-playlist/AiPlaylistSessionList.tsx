@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 
 import {
@@ -42,10 +42,23 @@ export default function AiPlaylistSessionList({
                                               }: AiPlaylistSessionListProps) {
     const [sessions, setSessions] = useState<AiPlaylistSession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [pagination, setPagination] = useState<{
+        nextCursor: string | null;
+        nextIdAfter: string | null;
+        hasNext: boolean;
+    }>({ nextCursor: null, nextIdAfter: null, hasNext: false });
+    const [isMoreLoading, setIsMoreLoading] = useState(false);
+    const requestStateRef = useRef({ version: 0, loading: false });
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
+        const requestState = requestStateRef.current;
+        const version = ++requestState.version;
+        requestState.loading = false;
+        setSessions([]);
+        setPagination({ nextCursor: null, nextIdAfter: null, hasNext: false });
+        setIsMoreLoading(false);
 
         const loadSessions = async () => {
             try {
@@ -58,7 +71,10 @@ export default function AiPlaylistSessionList({
                 });
 
                 if (!cancelled) {
-                    setSessions(response.data);
+                    setSessions([...new Map(
+                        response.data.map((session) => [session.id, session]),
+                    ).values()]);
+                    setPagination(response);
                 }
             } catch {
                 if (!cancelled) {
@@ -75,8 +91,52 @@ export default function AiPlaylistSessionList({
 
         return () => {
             cancelled = true;
+            if (requestState.version === version) requestState.version++;
         };
     }, []);
+
+    const loadMoreSessions = async () => {
+        const requestState = requestStateRef.current;
+        if (
+            isLoading || requestState.loading || !pagination.hasNext ||
+            !pagination.nextCursor || !pagination.nextIdAfter
+        ) {
+            return;
+        }
+
+        const version = requestState.version;
+        requestState.loading = true;
+        setIsMoreLoading(true);
+        setError(null);
+        try {
+            const response = await getAiPlaylistSessions({
+                limit: 20,
+                sortDirection: 'DESCENDING',
+                cursor: pagination.nextCursor,
+                idAfter: pagination.nextIdAfter,
+            });
+            if (requestState.version !== version) return;
+            setSessions((previous) => {
+                const seen = new Set(previous.map((session) => session.id));
+                const additional = response.data.filter((session) => {
+                    if (seen.has(session.id)) return false;
+                    seen.add(session.id);
+                    return true;
+                });
+                return [...previous, ...additional];
+            });
+            setPagination(response);
+        } catch {
+            if (requestState.version === version) {
+                setError('대화를 더 불러오지 못했어요. 다시 시도해주세요.');
+            }
+        } finally {
+            if (requestState.version === version) {
+                requestState.loading = false;
+                setIsMoreLoading(false);
+            }
+        }
+    };
 
     if (isLoading) {
         return (
@@ -86,7 +146,7 @@ export default function AiPlaylistSessionList({
         );
     }
 
-    if (error) {
+    if (error && sessions.length === 0) {
         return (
             <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-red-400">
                 {error}
@@ -141,6 +201,21 @@ export default function AiPlaylistSessionList({
                         </div>
                     </button>
                 ))}
+                {error && (
+                    <p role="alert" className="px-3 py-2 text-center text-sm text-red-400">
+                        {error}
+                    </p>
+                )}
+                {pagination.hasNext && (
+                    <button
+                        type="button"
+                        onClick={() => void loadMoreSessions()}
+                        disabled={isMoreLoading}
+                        className="rounded-xl px-3 py-3 text-sm text-gray-400 hover:bg-gray-800 disabled:opacity-50"
+                    >
+                        {isMoreLoading ? '대화를 불러오는 중...' : '대화 더 보기'}
+                    </button>
+                )}
             </div>
         </div>
     );
