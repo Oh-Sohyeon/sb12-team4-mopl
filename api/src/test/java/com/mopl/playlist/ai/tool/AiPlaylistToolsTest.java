@@ -1,6 +1,11 @@
 package com.mopl.playlist.ai.tool;
 
 import com.mopl.playlist.ai.service.AiPlaylistCandidateStore;
+import com.mopl.content.service.ContentService;
+import com.mopl.content.repository.ContentTagRepository;
+import com.mopl.review.repository.ReviewRepository;
+import com.mopl.review.service.ReviewService;
+import com.mopl.watchingsession.service.WatchingSessionService;
 import com.mopl.content.search.condition.SemanticCandidateCondition;
 import com.mopl.content.search.dto.ContentCandidate;
 import com.mopl.content.search.service.SemanticCandidateSearchService;
@@ -88,7 +93,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			semanticCandidateSearchService,
 			candidateStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 	}
 
@@ -145,7 +155,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			mock(SemanticCandidateSearchService.class),
 			candidateStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
@@ -204,7 +219,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			searchService,
 			candidateStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 
 		ToolContext toolContext = new ToolContext(Map.of(
@@ -335,7 +355,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			searchService,
 			firstStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 
 		// Server A에서 콘텐츠 검색 → 후보 저장
@@ -362,7 +387,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			searchService,
 			secondStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 
 		PlaylistResponse playlistResponse =
@@ -418,7 +448,12 @@ class AiPlaylistToolsTest {
 			playlistService,
 			mock(SemanticCandidateSearchService.class),
 			unavailableCandidateStore,
-			recommendationService
+			recommendationService,
+			mock(ContentService.class),
+			mock(ContentTagRepository.class),
+			mock(ReviewRepository.class),
+			mock(ReviewService.class),
+			mock(WatchingSessionService.class)
 		);
 
 		assertThrows(
