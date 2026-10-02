@@ -239,8 +239,11 @@ public class AiPlaylistTools {
 		UUID userId = (UUID) toolContext.getContext().get("currentUserId");
 		int size = pageLimit(limit, 20);
 		if (contentId != null) {
-			return new ViewingHistoryResult(contentId,
-				contentViewRepository.existsById(new ContentViewId(userId, contentId)), List.of(), null);
+			boolean viewed = contentViewRepository.existsById(new ContentViewId(userId, contentId));
+			if (viewed) {
+				saveCandidateIds(List.of(contentId), toolContext);
+			}
+			return new ViewingHistoryResult(contentId, viewed, List.of(), null);
 		}
 		List<ViewingHistoryItem> items = contentViewRepository.findRecentByUserId(userId, PageRequest.of(0, size))
 			.stream().map(view -> new ViewingHistoryItem(view.getContent().getId(),

@@ -360,7 +360,12 @@ class AiPlaylistQueryToolsTest {
         assertNull(result.limit());
         verify(contentViewRepository).existsById(id);
         verify(contentViewRepository, never()).findRecentByUserId(any(), any());
-        verifyNoInteractions(watchingSessionService, candidateStore, recommendationService);
+        if (viewed) {
+            verify(candidateStore).saveCandidates(currentUserId, "query-session", Set.of(contentId));
+        } else {
+            verifyNoInteractions(candidateStore);
+        }
+        verifyNoInteractions(watchingSessionService, recommendationService);
     }
 
     private ContentView historyView(UUID id, String title, ContentType type,
