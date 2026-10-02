@@ -13,6 +13,9 @@ import com.mopl.content.dto.ContentListItemResponse;
 import com.mopl.content.dto.ContentSearchCondition;
 import com.mopl.content.dto.ContentSortDirection;
 import com.mopl.content.repository.ContentTagRepository;
+import com.mopl.content.repository.ContentViewRepository;
+import com.mopl.core.domain.content.id.ContentViewId;
+import java.time.LocalDateTime;
 import com.mopl.content.service.ContentService;
 import com.mopl.content.search.condition.ContentTagCondition;
 import com.mopl.content.search.dto.ContentTagDto;
@@ -55,6 +58,7 @@ public class AiPlaylistTools {
 	private final ReviewRepository reviewRepository;
 	private final ReviewService reviewService;
 	private final WatchingSessionService watchingSessionService;
+	private final ContentViewRepository contentViewRepository;
 
 	@Tool(description = """
     사용자가 원하는 조건에 맞는 MOPL의 실제 콘텐츠를 찾을 때 사용합니다.
@@ -217,6 +221,41 @@ public class AiPlaylistTools {
 		return new WatchingResult(watchingSessionService.getWatchingSession(userId), null);
 	}
 
+	@Tool(description = """
+	현재 사용자의 과거 시청 이력을 조회합니다. 현재 시청 여부는 getWatchingSessions를 사용하세요.
+	contentId가 없으면 마지막 시청 시각순으로 최근 콘텐츠를 반환합니다. limit 기본 20, 최대 100입니다.
+	삭제된 콘텐츠는 최근 목록에서 제외됩니다. 전체 이력이나 개별 시청 이벤트 목록은 아닙니다.
+	타입 필터와 페이지 조회는 지원하지 않습니다. 영화 요청은 반환된 최근 목록의 type을 기준으로 고르세요.
+	contentId가 있으면 최근 목록의 limit과 무관하게 전체 저장 이력에서 해당 콘텐츠 기록의 존재 여부를 확인합니다.
+	viewed는 저장된 기록의 존재 여부이며 실제 감상 완료를 의미하지 않습니다.
+	firstViewedAt/lastViewedAt/viewCount는 저장된 값만 반환하며 개별 시청 시각이나 시간을 추측하지 마세요.
+	이미 본 콘텐츠 중 다시 추천할 때 이 목록의 실제 콘텐츠만 사용하세요. 목록의 contentId는 생성 후보로 등록됩니다.
+	""")
+	public ViewingHistoryResult getViewingHistory(
+		@ToolParam(required = false) UUID contentId,
+		@ToolParam(required = false) Integer limit,
+		ToolContext toolContext
+	) {
+		UUID userId = (UUID) toolContext.getContext().get("currentUserId");
+		int size = pageLimit(limit, 20);
+		if (contentId != null) {
+			return new ViewingHistoryResult(contentId,
+				contentViewRepository.existsById(new ContentViewId(userId, contentId)), List.of(), null);
+		}
+		List<ViewingHistoryItem> items = contentViewRepository.findRecentByUserId(userId, PageRequest.of(0, size))
+			.stream().map(view -> new ViewingHistoryItem(view.getContent().getId(),
+				view.getContent().getTitle(), view.getContent().getDescription(), view.getContent().getType(),
+				view.getFirstViewedAt(), view.getLastViewedAt(), view.getViewCount())).toList();
+		saveCandidateIds(items.stream().map(ViewingHistoryItem::contentId).toList(), toolContext);
+		return new ViewingHistoryResult(null, null, items, size);
+	}
+
+	public record ViewingHistoryItem(UUID contentId, String title, String description, ContentType type,
+		LocalDateTime firstViewedAt, LocalDateTime lastViewedAt, Long viewCount) {}
+
+	public record ViewingHistoryResult(UUID contentId, Boolean viewed, List<ViewingHistoryItem> recentViews,
+		Integer limit) {}
+
 	private void saveCandidateIds(List<UUID> contentIds, ToolContext toolContext) {
 		aiPlaylistCandidateStore.saveCandidates(
 			(UUID) toolContext.getContext().get("currentUserId"),
@@ -308,7 +347,7 @@ public class AiPlaylistTools {
 	사용자의 명확한 생성 요청이 있기 전에는 호출하지 마세요.
 	
 	플레이리스트를 생성하기 전에 사용할 콘텐츠가
-	searchContents 또는 recommendContentsForUser를 통해
+	searchContents, recommendContentsForUser 또는 getViewingHistory를 통해
 	실제 MOPL 콘텐츠인지 확인되어 있어야 합니다.
 	현재 후보가 확인되지 않은 경우에는
 	사용자의 요청에 맞는 도구를 다시 호출하여 콘텐츠를 확인한 후 이 도구를 호출하세요.

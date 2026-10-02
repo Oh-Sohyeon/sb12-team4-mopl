@@ -8,6 +8,12 @@ import com.mopl.content.dto.ContentListItemResponse;
 import com.mopl.content.dto.ContentResponse;
 import com.mopl.content.dto.ContentSearchCondition;
 import com.mopl.content.repository.ContentTagRepository;
+import com.mopl.content.repository.ContentViewRepository;
+import com.mopl.core.domain.content.entity.Content;
+import com.mopl.core.domain.content.entity.ContentView;
+import com.mopl.core.domain.content.id.ContentViewId;
+import java.time.LocalDateTime;
+import org.springframework.data.domain.PageRequest;
 import com.mopl.content.search.condition.ContentTagCondition;
 import com.mopl.content.search.condition.SemanticCandidateCondition;
 import com.mopl.content.search.dto.ContentCandidate;
@@ -61,6 +67,7 @@ class AiPlaylistQueryToolsTest {
     @Mock private ReviewRepository reviewRepository;
     @Mock private ReviewService reviewService;
     @Mock private WatchingSessionService watchingSessionService;
+    @Mock private ContentViewRepository contentViewRepository;
     @InjectMocks private AiPlaylistTools tools;
 
     private final UUID currentUserId = UUID.randomUUID();
@@ -269,6 +276,7 @@ class AiPlaylistQueryToolsTest {
         var response = mock(WatchingSessionResponse.class);
         when(watchingSessionService.getWatchingSession(currentUserId)).thenReturn(response);
         assertSame(response, tools.getWatchingSessions(null, null, null, context).session());
+        verifyNoInteractions(contentViewRepository);
     }
 
     @Test
@@ -290,13 +298,94 @@ class AiPlaylistQueryToolsTest {
     }
 
     @Test
+    void viewingHistoryUsesCurrentUserAndReturnsStoredRecentOrderAndValues() {
+        LocalDateTime recent = LocalDateTime.of(2026, 10, 2, 10, 0);
+        UUID olderId = UUID.randomUUID();
+        ContentView first = historyView(contentId, "최근 영화", ContentType.MOVIE, recent, 3L);
+        ContentView second = historyView(olderId, "이전 TV", ContentType.TV_SERIES, recent.minusDays(1), 1L);
+        when(contentViewRepository.findRecentByUserId(currentUserId, PageRequest.of(0, 20)))
+            .thenReturn(List.of(first, second));
+
+        var result = tools.getViewingHistory(null, null, context);
+
+        assertNull(result.viewed());
+        assertEquals(20, result.limit());
+        assertEquals(List.of(contentId, olderId), result.recentViews().stream()
+            .map(AiPlaylistTools.ViewingHistoryItem::contentId).toList());
+        var item = result.recentViews().getFirst();
+        assertEquals("최근 영화", item.title());
+        assertEquals("저장된 설명", item.description());
+        assertEquals(ContentType.MOVIE, item.type());
+        assertEquals(recent.minusDays(2), item.firstViewedAt());
+        assertEquals(recent, item.lastViewedAt());
+        assertEquals(3L, item.viewCount());
+        verify(contentViewRepository).findRecentByUserId(currentUserId, PageRequest.of(0, 20));
+        verify(candidateStore).saveCandidates(currentUserId, "query-session", Set.of(contentId, olderId));
+        verifyNoInteractions(watchingSessionService, recommendationService);
+    }
+
+    @Test
+    void emptyViewingHistoryAndRequestedLimitArePreserved() {
+        when(contentViewRepository.findRecentByUserId(currentUserId, PageRequest.of(0, 5)))
+            .thenReturn(List.of());
+        var result = tools.getViewingHistory(null, 5, context);
+        assertTrue(result.recentViews().isEmpty());
+        assertNull(result.viewed());
+        assertEquals(5, result.limit());
+        verifyNoInteractions(watchingSessionService);
+    }
+
+    @Test
+    void viewingHistoryLimitIsCappedAndInvalidLimitIsRejected() {
+        when(contentViewRepository.findRecentByUserId(currentUserId, PageRequest.of(0, 100)))
+            .thenReturn(List.of());
+        assertEquals(100, tools.getViewingHistory(null, 101, context).limit());
+        MoplException exception = assertThrows(MoplException.class,
+            () -> tools.getViewingHistory(null, 0, context));
+        assertEquals(CommonErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
+        verify(contentViewRepository, times(1)).findRecentByUserId(any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void specificContentCheckUsesEntireStoredHistoryForCurrentUser(boolean viewed) {
+        var id = new ContentViewId(currentUserId, contentId);
+        when(contentViewRepository.existsById(id)).thenReturn(viewed);
+
+        var result = tools.getViewingHistory(contentId, 1, context);
+
+        assertEquals(contentId, result.contentId());
+        assertEquals(viewed, result.viewed());
+        assertTrue(result.recentViews().isEmpty());
+        assertNull(result.limit());
+        verify(contentViewRepository).existsById(id);
+        verify(contentViewRepository, never()).findRecentByUserId(any(), any());
+        verifyNoInteractions(watchingSessionService, candidateStore, recommendationService);
+    }
+
+    private ContentView historyView(UUID id, String title, ContentType type,
+                                   LocalDateTime lastViewedAt, long count) {
+        Content content = mock(Content.class);
+        when(content.getId()).thenReturn(id);
+        when(content.getTitle()).thenReturn(title);
+        when(content.getDescription()).thenReturn("저장된 설명");
+        when(content.getType()).thenReturn(type);
+        ContentView view = mock(ContentView.class);
+        when(view.getContent()).thenReturn(content);
+        when(view.getFirstViewedAt()).thenReturn(lastViewedAt.minusDays(2));
+        when(view.getLastViewedAt()).thenReturn(lastViewedAt);
+        when(view.getViewCount()).thenReturn(count);
+        return view;
+    }
+
+    @Test
     void toolRegistrationHasOneSearchToolAndOptionalSchemas() throws Exception {
         var callbacks = ToolCallbacks.from(tools);
         assertEquals(Set.of("searchContents", "getContent", "getContentReviews", "getPlaylists",
-            "getPlaylist", "getWatchingSessions", "recommendContentsForUser", "createPlaylist"),
+            "getPlaylist", "getWatchingSessions", "getViewingHistory", "recommendContentsForUser", "createPlaylist"),
             Arrays.stream(callbacks).map(callback -> callback.getToolDefinition().name())
                 .collect(java.util.stream.Collectors.toSet()));
-        assertEquals(8, callbacks.length);
+        assertEquals(9, callbacks.length);
         var callback = Arrays.stream(callbacks)
             .filter(value -> value.getToolDefinition().name().equals("searchContents")).findFirst().orElseThrow();
         JsonNode schema = new ObjectMapper().readTree(callback.getToolDefinition().inputSchema());
@@ -305,5 +394,12 @@ class AiPlaylistQueryToolsTest {
         JsonNode options = schema.path("properties").path("options");
         assertTrue(options.path("properties").has("mode"));
         assertFalse(options.path("required").toString().contains("cursor"));
+        var historyCallback = Arrays.stream(callbacks)
+            .filter(value -> value.getToolDefinition().name().equals("getViewingHistory"))
+            .findFirst().orElseThrow();
+        JsonNode historySchema = new ObjectMapper().readTree(historyCallback.getToolDefinition().inputSchema());
+        assertFalse(historySchema.path("properties").has("toolContext"));
+        assertFalse(historySchema.path("required").toString().contains("contentId"));
+        assertFalse(historySchema.path("required").toString().contains("limit"));
     }
 }
