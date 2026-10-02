@@ -1,13 +1,13 @@
 package com.mopl.batch.external.tmdb.mapper;
 
-import com.mopl.batch.external.common.dto.ExternalContentDto;
-import com.mopl.batch.external.tmdb.dto.TmdbMovie;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mopl.batch.external.common.dto.ExternalContentDto;
+import com.mopl.batch.external.common.dto.ExternalContentTagDto;
+import com.mopl.batch.external.tmdb.dto.TmdbMovie;
 import java.time.LocalDate;
 import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 class TmdbContentMapperTest {
 
@@ -36,7 +36,17 @@ class TmdbContentMapperTest {
         assertThat(result.externalId()).isEqualTo("123");
         assertThat(result.thumbnailUrl())
                 .isEqualTo("https://image.tmdb.org/t/p/w500/poster.jpg");
-        assertThat(result.externalGenreIds())
-                .containsExactly(28, 12);
+
+        assertThat(result.tags())
+                .containsExactly(
+                        new ExternalContentTagDto(
+                                "GENRE",
+                                "ACTION"
+                        ),
+                        new ExternalContentTagDto(
+                                "GENRE",
+                                "ADVENTURE"
+                        )
+                );
     }
 }
