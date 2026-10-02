@@ -8,6 +8,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -22,16 +23,16 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 
 @EnableKafka
 @Configuration
+@ConditionalOnProperty(prefix = "spring.kafka", name = "bootstrap-servers")
 public class KafkaConfig {
 
-  @Value("${spring.kafka.bootstrap-servers:localhost:9092}")
+  @Value("${spring.kafka.bootstrap-servers}")
   private String bootstrapServers;
 
   @Value("${spring.kafka.consumer.group-id:mopl-group}")
   private String groupId;
 
   // ===== Producer (batch 등에서 KafkaTemplate으로 발행) =====
-
   @Bean
   public ProducerFactory<String, Object> producerFactory() {
     Map<String, Object> props = new HashMap<>();
@@ -47,7 +48,6 @@ public class KafkaConfig {
   }
 
   // ===== Consumer (api의 @KafkaListener가 사용) =====
-
   @Bean
   public ConsumerFactory<String, Object> consumerFactory() {
     Map<String, Object> props = new HashMap<>();
@@ -55,8 +55,8 @@ public class KafkaConfig {
     props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
-    props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+    props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.mopl.*");
+    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
     return new DefaultKafkaConsumerFactory<>(props);
   }
 
