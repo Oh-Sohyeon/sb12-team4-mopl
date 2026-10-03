@@ -73,6 +73,14 @@ public class SecurityConfig {
         return source;
     }
 
+    private CookieCsrfTokenRepository cookieCsrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        // 프론트(S3)와 API(CloudFront)가 서로 다른 site라, XSRF-TOKEN 쿠키도
+        // SameSite=None; Secure 로 내려줘야 cross-site 요청에서 브라우저가 저장/전송한다.
+        repository.setCookieCustomizer(cookie -> cookie.sameSite("None").secure(true));
+        return repository;
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         // JwtAuthenticationFilter 는 @Component 가 아니라 여기서 직접 생성한다.
@@ -92,7 +100,7 @@ public class SecurityConfig {
                 // JWT 를 쿠키로 주고받으므로 CSRF 방어가 필요함.
                 // 쿠키 이름 XSRF-TOKEN / 헤더 이름 X-XSRF-TOKEN 은 CookieCsrfTokenRepository 기본값과 정확히 일치.
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(cookieCsrfTokenRepository())
                         // 기본 핸들러(XorCsrfTokenRequestAttributeHandler)는 매 요청마다 토큰을 XOR 인코딩해서
                         // BREACH 공격을 방어하는데, 이 방식은 "쿠키의 원본 값을 그대로 헤더에 실어 보내는"
                         // 쿠키 기반 CSRF 흐름(SPA, curl 등)과 맞지 않아 정상 요청도 403으로 막힌다.
