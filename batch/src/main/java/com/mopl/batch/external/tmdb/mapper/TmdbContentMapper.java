@@ -34,7 +34,7 @@ public class TmdbContentMapper {
                     entry(10402, List.of("MUSIC")),
                     entry(9648, List.of("MYSTERY")),
                     entry(10749, List.of("ROMANCE")),
-                    entry(878, List.of("SCI_FI")),
+                    entry(878, List.of("SF")),
                     entry(10770, List.of("TV_MOVIE")),
                     entry(53, List.of("THRILLER")),
                     entry(10752, List.of("WAR")),
@@ -43,7 +43,7 @@ public class TmdbContentMapper {
                     entry(10762, List.of("KIDS")),
                     entry(10763, List.of("NEWS")),
                     entry(10764, List.of("REALITY")),
-                    entry(10765, List.of("SCI_FI", "FANTASY")),
+                    entry(10765, List.of("SF", "FANTASY")),
                     entry(10766, List.of("SOAP")),
                     entry(10767, List.of("TALK")),
                     entry(10768, List.of("WAR", "POLITICS"))

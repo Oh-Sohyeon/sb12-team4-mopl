@@ -30,6 +30,7 @@ public class RecommendationSectionService {
 
     private static final int SECTION_SIZE = 10;
     private static final int NEW_CONTENT_DAYS = 14;
+    private static final int MAX_PREFERENCE_SECTIONS_PER_TYPE = 2;
 
     private static final List<ContentType> PREFERENCE_SECTION_TYPES =
             List.of(
@@ -464,7 +465,7 @@ public class RecommendationSectionService {
                             preferenceTitle(
                                     userName,
                                     contentType,
-                                    preferredTag.value()
+                                    preferredTag
                             ),
                             preferenceDescription(contentType),
                             contentType,
@@ -608,10 +609,14 @@ public class RecommendationSectionService {
             return List.of();
         }
 
-        return preferredTagsByType.getOrDefault(
-                contentType,
-                List.of()
-        );
+        return preferredTagsByType
+                .getOrDefault(
+                        contentType,
+                        List.of()
+                )
+                .stream()
+                .limit(MAX_PREFERENCE_SECTIONS_PER_TYPE)
+                .toList();
     }
 
     private List<RecommendationSectionItem> takeUnused(
@@ -730,24 +735,63 @@ public class RecommendationSectionService {
     private String preferenceTitle(
             String userName,
             ContentType contentType,
-            String tag
+            RecommendationPreferredTag preferredTag
     ) {
+        String displayTag = displayTagValue(preferredTag);
+
         return switch (contentType) {
             case MOVIE ->
                     userName
                             + "님이 좋아하는 "
-                            + tag
+                            + displayTag
                             + " 영화 TOP 10";
             case TV_SERIES ->
                     userName
                             + "님 취향의 "
-                            + tag
+                            + displayTag
                             + " TV 시리즈 TOP 10";
             case SPORT ->
                     userName
                             + "님이 자주 보는 "
-                            + tag
+                            + displayTag
                             + " 콘텐츠 TOP 10";
+        };
+    }
+
+    private String displayTagValue(
+            RecommendationPreferredTag preferredTag
+    ) {
+        if (!"GENRE".equals(preferredTag.tag())) {
+            return preferredTag.value();
+        }
+
+        return switch (preferredTag.value()) {
+            case "ACTION" -> "액션";
+            case "ADVENTURE" -> "모험";
+            case "ANIMATION" -> "애니메이션";
+            case "COMEDY" -> "코미디";
+            case "CRIME" -> "범죄";
+            case "DOCUMENTARY" -> "다큐멘터리";
+            case "DRAMA" -> "드라마";
+            case "FAMILY" -> "가족";
+            case "FANTASY" -> "판타지";
+            case "HISTORY" -> "역사";
+            case "HORROR" -> "공포";
+            case "MUSIC" -> "음악";
+            case "MYSTERY" -> "미스터리";
+            case "ROMANCE" -> "로맨스";
+            case "SF", "SCI_FI" -> "SF";
+            case "TV_MOVIE" -> "TV 영화";
+            case "THRILLER" -> "스릴러";
+            case "WAR" -> "전쟁";
+            case "WESTERN" -> "서부";
+            case "KIDS" -> "키즈";
+            case "NEWS" -> "뉴스";
+            case "REALITY" -> "리얼리티";
+            case "SOAP" -> "솝 오페라";
+            case "TALK" -> "토크";
+            case "POLITICS" -> "정치";
+            default -> preferredTag.value();
         };
     }
 
