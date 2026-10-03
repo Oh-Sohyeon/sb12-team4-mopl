@@ -106,6 +106,7 @@ public class SecurityConfig {
                         // 쿠키 기반 CSRF 흐름(SPA, curl 등)과 맞지 않아 정상 요청도 403으로 막힌다.
                         // 쿠키 원본 값을 그대로 비교하는 CsrfTokenRequestAttributeHandler 로 명시해야 함.
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        .ignoringRequestMatchers("/api/users")
                 )
                                 .securityContext(context -> context
                                         .securityContextRepository(securityContextRepository)
