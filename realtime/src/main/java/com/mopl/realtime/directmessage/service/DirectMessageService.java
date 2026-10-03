@@ -7,6 +7,8 @@ import com.mopl.realtime.directmessage.dto.DirectMessageResponse;
 import com.mopl.realtime.directmessage.repository.ConversationRepository;
 import com.mopl.realtime.directmessage.repository.DirectMessageRepository;
 import java.util.UUID;
+import com.mopl.core.common.enums.MessageType;
+import com.mopl.realtime.moderation.service.MessageModerationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,7 @@ public class DirectMessageService {
 
 	private final ConversationRepository conversationRepository;
 	private final DirectMessageRepository directMessageRepository;
+	private final MessageModerationService moderation;
 
 	@Transactional
 	public DirectMessageResponse send(
@@ -24,6 +27,7 @@ public class DirectMessageService {
 		UUID senderId,
 		String content
 	) {
+		moderation.assertCanSend(senderId);
 		Conversation conversation = conversationRepository
 			.findWithParticipantsById(conversationId)
 			.orElseThrow(() ->
@@ -45,11 +49,13 @@ public class DirectMessageService {
 			);
 		}
 
+		String moderatedContent = moderation.inspect(senderId, MessageType.DM, conversationId, content);
+
 		DirectMessage directMessage = new DirectMessage(
 			conversation,
 			sender,
 			receiver,
-			content
+			moderatedContent
 		);
 
 		DirectMessage saved = directMessageRepository.save(directMessage);
