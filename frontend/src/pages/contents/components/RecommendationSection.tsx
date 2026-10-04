@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useRef,
 } from 'react';
 
@@ -14,91 +15,19 @@ import useHorizontalScrollFade from '@/pages/contents/hooks/useHorizontalScrollF
 
 import RecommendationCard from './RecommendationCard';
 
-const USE_MOCK_DATA = true;
+interface RecommendationSectionProps {
+  title?: string;
+  description?: string;
+  contentIds?: string[];
+}
 
-const MOCK_RECOMMENDATIONS: RecommendationItem[] = [
-  {
-    contentId: '11111111-1111-1111-1111-111111111111',
-    title: 'Interstellar',
-    type: 'MOVIE',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['SF', '우주', '드라마'],
-    semanticScore: 0.93,
-    externalRating: 8.7,
-    externalPopularity: 294.4,
-    externalVoteCount: 38124,
-    reason:
-      '높은 평점의 SF 드라마 장르를 바탕으로, 우주를 배경으로 한 깊이 있는 이야기를 좋아할 가능성이 높아 추천했어요.',
-  },
-  {
-    contentId: '22222222-2222-2222-2222-222222222222',
-    title: 'The Last of Us',
-    type: 'TV_SERIES',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['드라마', '액션', '포스트 아포칼립스'],
-    semanticScore: 0.91,
-    externalRating: 8.6,
-    externalPopularity: 410.2,
-    externalVoteCount: 6721,
-    reason:
-      '몰입감 있는 서사와 인물 관계를 중심으로 한 콘텐츠를 선호하는 시청 취향과 잘 맞는 작품이에요.',
-  },
-  {
-    contentId: '33333333-3333-3333-3333-333333333333',
-    title: 'Formula 1',
-    type: 'SPORT',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['F1', '모터스포츠', '레이싱'],
-    semanticScore: 0.89,
-    externalRating: 8.9,
-    externalPopularity: 380.7,
-    externalVoteCount: 9214,
-    reason:
-      '스포츠 콘텐츠 중에서도 빠른 전개와 경쟁 구도가 강한 콘텐츠에 관심을 보인 기록을 바탕으로 추천했어요.',
-  },
-  {
-    contentId: '44444444-4444-4444-4444-444444444444',
-    title: 'Dune: Part Two',
-    type: 'MOVIE',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['SF', '모험', '액션'],
-    semanticScore: 0.87,
-    externalRating: 8.5,
-    externalPopularity: 520.8,
-    externalVoteCount: 15841,
-    reason:
-      'SF 세계관과 긴 호흡의 서사를 가진 영화를 선호하는 취향을 반영해 추천했어요.',
-  },
-  {
-    contentId: '55555555-5555-5555-5555-555555555555',
-    title: 'Severance',
-    type: 'TV_SERIES',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['미스터리', 'SF', '스릴러'],
-    semanticScore: 0.84,
-    externalRating: 8.7,
-    externalPopularity: 307.1,
-    externalVoteCount: 4832,
-    reason:
-      '미스터리와 SF 요소가 섞인 콘텐츠에 대한 선호도가 높아 비슷한 분위기의 작품으로 골랐어요.',
-  },
-  {
-    contentId: '66666666-6666-6666-6666-666666666666',
-    title: 'Premier League',
-    type: 'SPORT',
-    thumbnailUrl: '/placeholder-movie.png',
-    tags: ['축구', '프리미어리그', '스포츠'],
-    semanticScore: 0.8,
-    externalRating: 8.3,
-    externalPopularity: 275.6,
-    externalVoteCount: 12402,
-    reason:
-      '경기 중심의 스포츠 콘텐츠와 실시간으로 함께 즐길 수 있는 콘텐츠를 선호하는 패턴을 반영했어요.',
-  },
-];
-
-export default function RecommendationSection() {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+export default function RecommendationSection({
+  title,
+  description,
+  contentIds,
+}: RecommendationSectionProps) {
+  const scrollContainerRef =
+    useRef<HTMLDivElement>(null);
 
   const {
     data,
@@ -108,24 +37,52 @@ export default function RecommendationSection() {
   } = useRecommendationStore();
 
   useEffect(() => {
-    if (!USE_MOCK_DATA) {
-      void fetch();
-    }
+    void fetch();
   }, [fetch]);
 
-  const recommendations = USE_MOCK_DATA
-    ? MOCK_RECOMMENDATIONS
-    : data;
+  const recommendations = useMemo(() => {
+    if (contentIds === undefined) {
+      return data;
+    }
 
-  const isLoading = !USE_MOCK_DATA && loading;
-  const hasError = !USE_MOCK_DATA && Boolean(error);
+    const recommendationByContentId =
+      new Map(
+        data.map((recommendation) => [
+          recommendation.contentId,
+          recommendation,
+        ]),
+      );
+
+    return contentIds
+      .map((contentId) =>
+        recommendationByContentId.get(
+          contentId,
+        ),
+      )
+      .filter(
+        (
+          recommendation,
+        ): recommendation is RecommendationItem =>
+          recommendation !== undefined,
+      );
+  }, [
+    contentIds,
+    data,
+  ]);
+
+  const sectionTitle =
+    title ?? '사용자님을 위한 AI 추천';
+
+  const sectionDescription =
+    description
+    ?? '시청 기록과 리뷰 취향을 바탕으로 골라봤어요.';
 
   const {
     showLeftFade,
     showRightFade,
   } = useHorizontalScrollFade(
     scrollContainerRef,
-    `${isLoading}-${recommendations.length}`,
+    `${loading}-${recommendations.length}`,
   );
 
   const handleScrollLeft = () => {
@@ -142,7 +99,7 @@ export default function RecommendationSection() {
     });
   };
 
-  if (hasError) {
+  if (error) {
     return (
       <section
         className="
@@ -162,7 +119,7 @@ export default function RecommendationSection() {
           <Sparkles className="h-5 w-5 text-pink-400" />
 
           <h2 className="text-xl font-bold text-white">
-            OO님을 위한 추천
+            {sectionTitle}
           </h2>
         </div>
 
@@ -173,7 +130,10 @@ export default function RecommendationSection() {
     );
   }
 
-  if (!isLoading && recommendations.length === 0) {
+  if (
+    !loading
+    && recommendations.length === 0
+  ) {
     return null;
   }
 
@@ -235,7 +195,7 @@ export default function RecommendationSection() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-white">
-                OO님을 위한 추천
+                {sectionTitle}
               </h2>
 
               <span
@@ -254,68 +214,74 @@ export default function RecommendationSection() {
             </div>
 
             <p className="mt-1 text-body2-m text-gray-400">
-              시청 기록과 리뷰 취향을 바탕으로 골라봤어요.
+              {sectionDescription}
             </p>
           </div>
         </div>
 
-        {!isLoading && recommendations.length > 0 && (
-          <div className="hidden items-center gap-2 sm:flex">
-            <button
-              type="button"
-              onClick={handleScrollLeft}
-              aria-label="이전 추천 콘텐츠 보기"
-              className="
-                flex
-                h-9
-                w-9
-                items-center
-                justify-center
-                rounded-full
-                border
-                border-gray-700
-                bg-gray-800
-                text-gray-300
-                transition
-                hover:border-gray-600
-                hover:bg-gray-700
-                hover:text-white
-              "
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
+        {!loading
+          && recommendations.length > 0
+          && (
+            <div className="hidden items-center gap-2 sm:flex">
+              <button
+                type="button"
+                onClick={handleScrollLeft}
+                aria-label="이전 추천 콘텐츠 보기"
+                className="
+                  flex
+                  h-9
+                  w-9
+                  items-center
+                  justify-center
+                  rounded-full
+                  border
+                  border-gray-700
+                  bg-gray-800
+                  text-gray-300
+                  transition
+                  hover:border-gray-600
+                  hover:bg-gray-700
+                  hover:text-white
+                "
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
 
-            <button
-              type="button"
-              onClick={handleScrollRight}
-              aria-label="다음 추천 콘텐츠 보기"
-              className="
-                flex
-                h-9
-                w-9
-                items-center
-                justify-center
-                rounded-full
-                border
-                border-gray-700
-                bg-gray-800
-                text-gray-300
-                transition
-                hover:border-gray-600
-                hover:bg-gray-700
-                hover:text-white
-              "
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={handleScrollRight}
+                aria-label="다음 추천 콘텐츠 보기"
+                className="
+                  flex
+                  h-9
+                  w-9
+                  items-center
+                  justify-center
+                  rounded-full
+                  border
+                  border-gray-700
+                  bg-gray-800
+                  text-gray-300
+                  transition
+                  hover:border-gray-600
+                  hover:bg-gray-700
+                  hover:text-white
+                "
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          )}
       </div>
 
-      {isLoading ? (
+      {loading ? (
         <div className="flex w-full min-w-0 max-w-full gap-4 overflow-hidden">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <RecommendationCardSkeleton key={index} />
+          {Array.from({
+            length: 4,
+          }).map((_, index) => (
+            <RecommendationCardSkeleton
+              key={index}
+            />
           ))}
         </div>
       ) : (
@@ -335,12 +301,18 @@ export default function RecommendationSection() {
               pb-1
             "
           >
-            {recommendations.map((recommendation) => (
-              <RecommendationCard
-                key={recommendation.contentId}
-                recommendation={recommendation}
-              />
-            ))}
+            {recommendations.map(
+              (recommendation) => (
+                <RecommendationCard
+                  key={
+                    recommendation.contentId
+                  }
+                  recommendation={
+                    recommendation
+                  }
+                />
+              ),
+            )}
           </div>
 
           {showLeftFade && (

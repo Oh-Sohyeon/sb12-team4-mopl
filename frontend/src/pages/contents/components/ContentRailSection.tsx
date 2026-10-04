@@ -1,11 +1,16 @@
 import {
   Clapperboard,
+  ImageOff,
   Sparkles,
   Star,
   Trophy,
   Tv,
 } from 'lucide-react';
-import { useRef } from 'react';
+import {
+  useRef,
+  useState,
+} from 'react';
+import { Link } from 'react-router-dom';
 
 import useHorizontalScrollFade from '@/pages/contents/hooks/useHorizontalScrollFade';
 
@@ -30,9 +35,13 @@ interface ContentRailSectionProps {
   contentType: SectionContentType | null;
   tag: string | null;
   items: SectionContentItem[];
+  personalized?: boolean;
 }
 
-const CONTENT_TYPE_LABEL: Record<SectionContentType, string> = {
+const CONTENT_TYPE_LABEL: Record<
+  SectionContentType,
+  string
+> = {
   MOVIE: '영화',
   TV_SERIES: 'TV 시리즈',
   SPORT: '스포츠',
@@ -44,8 +53,10 @@ export default function ContentRailSection({
   contentType,
   tag,
   items,
+  personalized = false,
 }: ContentRailSectionProps) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef =
+    useRef<HTMLDivElement>(null);
 
   const {
     showLeftFade,
@@ -59,29 +70,57 @@ export default function ContentRailSection({
     <section className="min-w-0">
       <div className="mb-5 flex items-start gap-3">
         <div
-          className="
-            flex
-            h-9
-            w-9
-            flex-shrink-0
-            items-center
-            justify-center
-            rounded-xl
-            bg-gray-900
-          "
+          className={[
+            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl',
+            personalized
+              ? 'bg-pink-500/10'
+              : 'bg-gray-900',
+          ].join(' ')}
         >
-          <SectionIcon contentType={contentType} />
+          <SectionIcon
+            contentType={contentType}
+            personalized={personalized}
+          />
         </div>
 
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-title1-b-140 text-white">
+          <div
+            className="
+              flex
+              flex-wrap
+              items-center
+              gap-2
+            "
+          >
+            <h2
+              className="
+                text-title1-b-140
+                text-white
+              "
+            >
               {title}
             </h2>
+
+            {personalized && (
+              <span
+                className="
+                  rounded-full
+                  bg-pink-500/10
+                  px-2.5
+                  py-1
+                  text-caption1-sb
+                  text-pink-400
+                "
+              >
+                맞춤 추천
+              </span>
+            )}
 
             {tag && (
               <span
                 className="
+                  max-w-[160px]
+                  truncate
                   rounded-full
                   bg-gray-900
                   px-2.5
@@ -89,19 +128,32 @@ export default function ContentRailSection({
                   text-caption1-sb
                   text-gray-400
                 "
+                title={tag}
               >
                 #{tag}
               </span>
             )}
           </div>
 
-          <p className="mt-1 text-body3-m text-gray-500">
+          <p
+            className="
+              mt-1
+              text-body3-m
+              text-gray-500
+            "
+          >
             {description}
           </p>
         </div>
       </div>
 
-      <div className="relative min-w-0 overflow-hidden">
+      <div
+        className="
+          relative
+          min-w-0
+          overflow-hidden
+        "
+      >
         <div
           ref={scrollContainerRef}
           className="
@@ -136,21 +188,67 @@ export default function ContentRailSection({
 
 function SectionIcon({
   contentType,
+  personalized,
 }: {
   contentType: SectionContentType | null;
+  personalized: boolean;
 }) {
+  if (personalized) {
+    return (
+      <Sparkles
+        className="
+          h-5
+          w-5
+          text-pink-400
+        "
+      />
+    );
+  }
+
   switch (contentType) {
     case 'MOVIE':
-      return <Clapperboard className="h-5 w-5 text-violet-400" />;
+      return (
+        <Clapperboard
+          className="
+            h-5
+            w-5
+            text-violet-400
+          "
+        />
+      );
 
     case 'TV_SERIES':
-      return <Tv className="h-5 w-5 text-emerald-400" />;
+      return (
+        <Tv
+          className="
+            h-5
+            w-5
+            text-emerald-400
+          "
+        />
+      );
 
     case 'SPORT':
-      return <Trophy className="h-5 w-5 text-amber-400" />;
+      return (
+        <Trophy
+          className="
+            h-5
+            w-5
+            text-amber-400
+          "
+        />
+      );
 
     default:
-      return <Sparkles className="h-5 w-5 text-pink-400" />;
+      return (
+        <Sparkles
+          className="
+            h-5
+            w-5
+            text-pink-400
+          "
+        />
+      );
   }
 }
 
@@ -159,8 +257,23 @@ function ContentRailCard({
 }: {
   item: SectionContentItem;
 }) {
+  const [imageError, setImageError] =
+    useState(false);
+
+  const hasThumbnail =
+    Boolean(item.thumbnailUrl)
+    && !imageError;
+
   return (
-    <div className="group w-[200px] flex-shrink-0">
+    <Link
+      to={`/contents/${item.contentId}`}
+      className="
+        group
+        w-[200px]
+        flex-shrink-0
+        text-left
+      "
+    >
       <div
         className="
           relative
@@ -171,33 +284,57 @@ function ContentRailCard({
           bg-gray-800
         "
       >
-        <img
-          src={item.thumbnailUrl || '/placeholder-movie.png'}
-          alt={item.title}
-          className="
-            h-full
-            w-full
-            object-cover
-            transition-transform
-            duration-300
-            group-hover:scale-[1.03]
-          "
-          onError={(event) => {
-            event.currentTarget.src = '/placeholder-movie.png';
-          }}
-        />
+        {hasThumbnail ? (
+          <img
+            src={item.thumbnailUrl ?? undefined}
+            alt={item.title}
+            className="
+              h-full
+              w-full
+              object-cover
+              transition-transform
+              duration-300
+              group-hover:scale-[1.03]
+            "
+            onError={() =>
+              setImageError(true)
+            }
+          />
+        ) : (
+          <div
+            className="
+              flex
+              h-full
+              w-full
+              flex-col
+              items-center
+              justify-center
+              gap-2
+              bg-gray-800
+              text-gray-500
+            "
+          >
+            <ImageOff className="h-8 w-8" />
 
-        <div
-          className="
-            pointer-events-none
-            absolute
-            inset-0
-            bg-gradient-to-t
-            from-black/50
-            via-transparent
-            to-transparent
-          "
-        />
+            <span className="text-caption1-m">
+              썸네일 없음
+            </span>
+          </div>
+        )}
+
+        {hasThumbnail && (
+          <div
+            className="
+              pointer-events-none
+              absolute
+              inset-0
+              bg-gradient-to-t
+              from-black/50
+              via-transparent
+              to-transparent
+            "
+          />
+        )}
 
         {item.badge && (
           <span
@@ -234,41 +371,91 @@ function ContentRailCard({
         </span>
       </div>
 
-      <div className="mt-3">
-        <h3 className="line-clamp-1 text-body1-b text-gray-50">
+      <div
+        className="
+          mt-3
+          flex
+          min-h-[92px]
+          flex-col
+        "
+      >
+        <h3
+          className="
+            line-clamp-1
+            text-body1-b
+            text-gray-50
+          "
+          title={item.title}
+        >
           {item.title}
         </h3>
 
-        {item.rating != null && (
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+        <div
+          className="
+            mt-1.5
+            flex
+            min-h-[20px]
+            items-center
+          "
+        >
+          {item.rating != null && (
+            <>
+              <Star
+                className="
+                  h-4
+                  w-4
+                  fill-yellow-400
+                  text-yellow-400
+                "
+              />
 
-            <span className="text-body3-m text-gray-400">
-              {item.rating.toFixed(1)}
-            </span>
-          </div>
-        )}
+              <span
+                className="
+                  ml-1.5
+                  text-body3-m
+                  text-gray-400
+                "
+              >
+                {item.rating.toFixed(1)}
+              </span>
+            </>
+          )}
+        </div>
 
-        <div className="mt-2 flex gap-1.5 overflow-hidden">
-          {item.tags.slice(0, 2).map((itemTag) => (
-            <span
-              key={itemTag}
-              className="
-                flex-shrink-0
-                rounded-full
-                bg-gray-900
-                px-2
-                py-1
-                text-caption1-m
-                text-gray-400
-              "
-            >
-              #{itemTag}
-            </span>
-          ))}
+        <div
+          className="
+            mt-auto
+            flex
+            min-h-[26px]
+            gap-1.5
+            overflow-hidden
+            pt-2
+          "
+        >
+          {item.tags
+            .slice(0, 2)
+            .map((itemTag, index) => (
+              <span
+                key={`${itemTag}-${index}`}
+                title={itemTag}
+                className="
+                  max-w-[105px]
+                  flex-shrink-0
+                  truncate
+                  rounded-full
+                  bg-gray-900
+                  px-2
+                  py-1
+                  text-caption1-m
+                  text-gray-400
+                "
+              >
+                #{itemTag}
+              </span>
+            ))}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
