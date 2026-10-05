@@ -100,7 +100,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 	private void authorizeSubscribe(StompHeaderAccessor accessor) {
 		StompPrincipal principal = requirePrincipal(accessor);
 		String destination = accessor.getDestination();
-		// 브로커 내부 사용자 경로와 와일드카드는 직접 구독할 수 없다.
+		// 자기 오류 목적지를 제외한 사용자 경로와 와일드카드 구독은 허용하지 않는다.
 		if ("/user/sub/errors".equals(destination)
 			|| destination != null && CONTENT_SUBSCRIPTION.matcher(destination).matches()) {
 			return;

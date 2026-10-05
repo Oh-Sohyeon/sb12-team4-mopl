@@ -1,14 +1,35 @@
 package com.mopl.realtime.moderation.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.mopl.infrastructure.ai.config.AiConfig;
+import com.mopl.infrastructure.ai.config.AiProperties;
 import com.mopl.realtime.moderation.rule.ProfanityRule;
 import com.mopl.realtime.moderation.dto.RuleAction;
 import java.time.Duration;
+import org.springframework.ai.chat.client.ChatClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
 
 class ModerationConfigTest {
+    @Test void aiEnabledContextRegistersAiPropertiesAndModerationTimeoutCustomizer() {
+        new ApplicationContextRunner().withUserConfiguration(AiEnabledModerationContext.class)
+            .withPropertyValues("mopl.ai.enabled=true", "ai.openai.connect-timeout=2s", "ai.openai.read-timeout=7s")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).hasSingleBean(AiProperties.class);
+                assertThat(context.getBean(AiProperties.class).connectTimeout()).isEqualTo(Duration.ofSeconds(2));
+                assertThat(context.getBean(AiProperties.class).readTimeout()).isEqualTo(Duration.ofSeconds(7));
+                assertThat(context).hasBean("moderationChatClient");
+                assertThat(context).hasBean("moderationAiTimeouts");
+            });
+    }
+
     @Test void defaultsBindAndAiDisabledNeedsNoModelOrApiKey() {
         new ApplicationContextRunner().withUserConfiguration(ModerationConfig.class, ProfanityRule.class)
             .withPropertyValues("mopl.ai.enabled=false").run(context -> {
@@ -49,5 +70,16 @@ class ModerationConfigTest {
                 assertThat(properties.applyTimeout()).isEqualTo(Duration.ofMillis(750));
                 assertThat(properties.reviewTimeout()).isEqualTo(Duration.ofSeconds(5));
             });
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    @ComponentScan(basePackageClasses = {AiConfig.class, ModerationConfig.class})
+    static class AiEnabledModerationContext {
+        @Bean
+        ChatClient.Builder chatClientBuilder() {
+            ChatClient.Builder builder = mock(ChatClient.Builder.class);
+            when(builder.build()).thenReturn(mock(ChatClient.class));
+            return builder;
+        }
     }
 }

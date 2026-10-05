@@ -233,7 +233,7 @@ class ModerationPersistenceTest {
             try { release.await(); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
             return new com.mopl.realtime.moderation.dto.MessageReviewDecision(
                 action);
-        },logs,sanctions,ModerationTestSettings.defaults(),
+        },new com.mopl.realtime.moderation.review.MessageReviewRoutingFilter(),logs,sanctions,ModerationTestSettings.defaults(),
             com.mopl.realtime.moderation.support.MessageReviewTestSettings.defaults(),meters,worker,scheduler);
         assertThat(new com.mopl.realtime.moderation.rule.ProfanityRule(ModerationTestSettings.defaults(),
             com.mopl.realtime.moderation.support.MessageReviewTestSettings.defaults()).inspect("가정교육 수준 보인다").action())
