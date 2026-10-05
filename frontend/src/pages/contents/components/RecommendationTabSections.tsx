@@ -207,21 +207,18 @@ export default function RecommendationTabSections({
   return (
     <div className="flex min-w-0 flex-col gap-12">
       {sections.map((section) => {
-        if (section.items.length === 0) {
-          return null;
-        }
-
         if (section.key === 'AI_PERSONALIZED') {
           return (
             <RecommendationSectionComponent
               key={section.key}
               title={section.title}
               description={section.description}
-              contentIds={section.items.map(
-                (item) => item.contentId,
-              )}
             />
           );
+        }
+
+        if (section.items.length === 0) {
+          return null;
         }
 
         return (

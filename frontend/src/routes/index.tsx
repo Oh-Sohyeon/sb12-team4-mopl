@@ -25,10 +25,6 @@ import ConversationsPage from '@/pages/conversations/page';
 import ConversationWithPage from '@/pages/conversations/with/page';
 import AdminUsersPage from '@/pages/admin/users/page';
 
-// Dev Preview Pages
-import RecommendationPreviewPage from '@/pages/dev/recommendation-preview/page';
-import ContentsPreviewPage from '@/pages/dev/contents-preview/page';
-
 // Error Pages
 import NotFoundPage from '@/pages/not-found/page';
 
@@ -52,29 +48,7 @@ export default function AppRoutes() {
           element={<ResetPasswordPage />}
         />
 
-        {/* Dev Preview - 추천 섹션 단독 */}
-        {import.meta.env.DEV && (
-          <Route
-            path="/dev/recommendation-preview"
-            element={<RecommendationPreviewPage />}
-          />
-        )}
-
-        {/*
-          [추가]
-          실제 앱 GNB + SideMenu 레이아웃은 사용하지만
-          ProtectedRoute는 거치지 않는 개발용 preview
-        */}
-        {import.meta.env.DEV && (
-          <Route element={<ProtectedLayout />}>
-            <Route
-              path="/dev/contents-preview"
-              element={<ContentsPreviewPage />}
-            />
-          </Route>
-        )}
-
-        {/* 실제 Protected Routes */}
+        {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
           <Route element={<ProtectedLayout />}>
             {/* Home */}

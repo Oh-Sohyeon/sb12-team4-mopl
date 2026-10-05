@@ -5,12 +5,10 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
-  useMemo,
   useRef,
 } from 'react';
 
 import useRecommendationStore from '@/lib/stores/useRecommendationStore';
-import type { RecommendationItem } from '@/lib/types';
 import useHorizontalScrollFade from '@/pages/contents/hooks/useHorizontalScrollFade';
 
 import RecommendationCard from './RecommendationCard';
@@ -18,13 +16,11 @@ import RecommendationCard from './RecommendationCard';
 interface RecommendationSectionProps {
   title?: string;
   description?: string;
-  contentIds?: string[];
 }
 
 export default function RecommendationSection({
   title,
   description,
-  contentIds,
 }: RecommendationSectionProps) {
   const scrollContainerRef =
     useRef<HTMLDivElement>(null);
@@ -40,35 +36,7 @@ export default function RecommendationSection({
     void fetch();
   }, [fetch]);
 
-  const recommendations = useMemo(() => {
-    if (contentIds === undefined) {
-      return data;
-    }
-
-    const recommendationByContentId =
-      new Map(
-        data.map((recommendation) => [
-          recommendation.contentId,
-          recommendation,
-        ]),
-      );
-
-    return contentIds
-      .map((contentId) =>
-        recommendationByContentId.get(
-          contentId,
-        ),
-      )
-      .filter(
-        (
-          recommendation,
-        ): recommendation is RecommendationItem =>
-          recommendation !== undefined,
-      );
-  }, [
-    contentIds,
-    data,
-  ]);
+  const recommendations = data;
 
   const sectionTitle =
     title ?? '사용자님을 위한 AI 추천';
@@ -130,10 +98,7 @@ export default function RecommendationSection({
     );
   }
 
-  if (
-    !loading
-    && recommendations.length === 0
-  ) {
+  if (!loading && recommendations.length === 0) {
     return null;
   }
 
@@ -219,69 +184,63 @@ export default function RecommendationSection({
           </div>
         </div>
 
-        {!loading
-          && recommendations.length > 0
-          && (
-            <div className="hidden items-center gap-2 sm:flex">
-              <button
-                type="button"
-                onClick={handleScrollLeft}
-                aria-label="이전 추천 콘텐츠 보기"
-                className="
-                  flex
-                  h-9
-                  w-9
-                  items-center
-                  justify-center
-                  rounded-full
-                  border
-                  border-gray-700
-                  bg-gray-800
-                  text-gray-300
-                  transition
-                  hover:border-gray-600
-                  hover:bg-gray-700
-                  hover:text-white
-                "
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
+        {!loading && recommendations.length > 0 && (
+          <div className="hidden items-center gap-2 sm:flex">
+            <button
+              type="button"
+              onClick={handleScrollLeft}
+              aria-label="이전 추천 콘텐츠 보기"
+              className="
+                flex
+                h-9
+                w-9
+                items-center
+                justify-center
+                rounded-full
+                border
+                border-gray-700
+                bg-gray-800
+                text-gray-300
+                transition
+                hover:border-gray-600
+                hover:bg-gray-700
+                hover:text-white
+              "
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
 
-              <button
-                type="button"
-                onClick={handleScrollRight}
-                aria-label="다음 추천 콘텐츠 보기"
-                className="
-                  flex
-                  h-9
-                  w-9
-                  items-center
-                  justify-center
-                  rounded-full
-                  border
-                  border-gray-700
-                  bg-gray-800
-                  text-gray-300
-                  transition
-                  hover:border-gray-600
-                  hover:bg-gray-700
-                  hover:text-white
-                "
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleScrollRight}
+              aria-label="다음 추천 콘텐츠 보기"
+              className="
+                flex
+                h-9
+                w-9
+                items-center
+                justify-center
+                rounded-full
+                border
+                border-gray-700
+                bg-gray-800
+                text-gray-300
+                transition
+                hover:border-gray-600
+                hover:bg-gray-700
+                hover:text-white
+              "
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
         <div className="flex w-full min-w-0 max-w-full gap-4 overflow-hidden">
-          {Array.from({
-            length: 4,
-          }).map((_, index) => (
-            <RecommendationCardSkeleton
-              key={index}
-            />
+          {Array.from({ length: 4 }).map((_, index) => (
+            <RecommendationCardSkeleton key={index} />
           ))}
         </div>
       ) : (
@@ -301,18 +260,12 @@ export default function RecommendationSection({
               pb-1
             "
           >
-            {recommendations.map(
-              (recommendation) => (
-                <RecommendationCard
-                  key={
-                    recommendation.contentId
-                  }
-                  recommendation={
-                    recommendation
-                  }
-                />
-              ),
-            )}
+            {recommendations.map((recommendation) => (
+              <RecommendationCard
+                key={recommendation.contentId}
+                recommendation={recommendation}
+              />
+            ))}
           </div>
 
           {showLeftFade && (
