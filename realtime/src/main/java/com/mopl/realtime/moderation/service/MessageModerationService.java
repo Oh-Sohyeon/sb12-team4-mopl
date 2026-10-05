@@ -32,9 +32,10 @@ public class MessageModerationService {
 
     public void assertCanSend(UUID userId) {
         meters.counter("moderation.message.received").increment();
-        if (restrictions.restricted(userId)) {
+        var restriction = restrictions.restriction(userId);
+        if (restriction != null) {
             meters.counter("moderation.messages", "outcome", "restricted").increment();
-            throw new ModerationException(ModerationException.ErrorCode.CHAT_RESTRICTED);
+            throw new ModerationException(ModerationException.ErrorCode.CHAT_RESTRICTED, restriction);
         }
     }
 

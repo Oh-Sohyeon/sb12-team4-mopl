@@ -238,11 +238,20 @@ class ModeratedMessageDeliveryTest {
         });
     }
     @ParameterizedTest @EnumSource(MessageType.class)
-    void restrictionStillBlocksBeforeContextAndPersistence(MessageType type) {
-        when(restrictions.restricted(userId)).thenReturn(true);
-        assertThatThrownBy(() -> send(type,"정상 메시지")).isInstanceOf(ModerationException.class);
+    void restrictionBlocksBothChannelsAndAllowsDeliveryAfterExpiry(MessageType type) {
+        when(restrictions.restriction(userId)).thenReturn(new ChatRestrictionStore.Restriction(com.mopl.realtime.moderation.dto.SanctionLevel.TEMPORARY_SHORT, java.time.Instant.now().plusSeconds(600)));
+        var exception = catchThrowableOfType(() -> send(type,"정상 메시지"), ModerationException.class);
+        var response = new com.mopl.realtime.moderation.handler.ModerationErrorHandler().handle(exception);
+        assertThat(response.code()).isEqualTo("CHAT_RESTRICTED");
+        assertThat(response.message()).contains("메시지 이용 정책 위반");
+        assertThat(response.restrictionLevel()).isEqualTo(SanctionLevel.TEMPORARY_SHORT);
+        assertThat(response.restrictedUntil()).isEqualTo(restrictions.restriction(userId).restrictedUntil());
         verify(chats,never()).save(any());verify(messages,never()).save(any());
         verifyNoInteractions(broadcasts,messageReview,logs,sanctions);
+        when(restrictions.restriction(userId)).thenReturn(null);
+        send(type,"만료 후 정상 메시지");
+        assertDelivery(type,"만료 후 정상 메시지");
+        verifyNoInteractions(logs,sanctions);
     }
     private void send(MessageType type,String text) {
         Principal principal=() -> userId.toString();

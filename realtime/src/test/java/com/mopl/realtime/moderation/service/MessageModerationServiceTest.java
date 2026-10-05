@@ -67,7 +67,7 @@ class MessageModerationServiceTest {
         assertThat(meters.get("moderation.reviews").tag("outcome","dispatch_error").counter().count()).isEqualTo(1);
     }
     @Test void restrictionBlocksBeforeRuleOrLogWork() {
-        when(restrictions.restricted(user)).thenReturn(true);
+        when(restrictions.restriction(user)).thenReturn(new ChatRestrictionStore.Restriction(SanctionLevel.TEMPORARY_SHORT, java.time.Instant.now().plusSeconds(600)));
         assertThatThrownBy(() -> service.assertCanSend(user)).isInstanceOf(ModerationException.class)
             .extracting(e -> ((ModerationException)e).getErrorCode()).isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTED);
         verifyNoInteractions(logs,reviews,messageReviews);

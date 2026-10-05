@@ -92,6 +92,37 @@ class ChatRestrictionStoreExternalRedisTest {
         assertThat(store.apply(user, newToken, SanctionLevel.TEMPORARY_SHORT, "사유", Instant.now().plusSeconds(1))).isTrue();
         assertThat(redis.getExpire("moderation:{" + user + "}:restriction")).isBetween(86395L, 86400L);
     }
+    @Test void actualRedisExpiryIsReportedAndExpiredRestrictionAllowsSendingAgain() throws Exception {
+        UUID user = UUID.randomUUID();
+        String key = "moderation:{" + user + "}:restriction";
+        assertThat(store.restriction(user)).isNull();
+        var moderation = new MessageModerationService(store,
+            org.mockito.Mockito.mock(ProfanityRule.class), org.mockito.Mockito.mock(MessageReviewService.class),
+            org.mockito.Mockito.mock(ModerationLogService.class), org.mockito.Mockito.mock(ModerationReviewDispatcher.class),
+            ModerationTestSettings.defaults(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        assertThatCode(() -> moderation.assertCanSend(user)).doesNotThrowAnyException();
+        String token = store.claimReview(user);
+        assertThat(store.apply(user, token, SanctionLevel.TEMPORARY_LONG, "문맥상 반복 공격", Instant.now().plusSeconds(5))).isTrue();
+        Long expires = redis.execute(new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+            "return redis.call('PEXPIRETIME', KEYS[1])", Long.class), java.util.List.of(key));
+        var exception = catchThrowableOfType(() -> moderation.assertCanSend(user), ModerationException.class);
+        var response = new com.mopl.realtime.moderation.handler.ModerationErrorHandler().handle(exception);
+        assertThat(response.code()).isEqualTo("CHAT_RESTRICTED");
+        assertThat(response.restrictionLevel()).isEqualTo(SanctionLevel.TEMPORARY_LONG);
+        assertThat(response.restrictedUntil()).isEqualTo(Instant.ofEpochMilli(expires));
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        var json = mapper.readTree(mapper.writeValueAsString(response));
+        assertThat(json.path("code").asText()).isEqualTo("CHAT_RESTRICTED");
+        assertThat(json.path("restrictionLevel").asText()).isEqualTo("TEMPORARY_LONG");
+        assertThat(Instant.parse(json.path("restrictedUntil").asText())).isEqualTo(Instant.ofEpochMilli(expires));
+        assertThat(json.toString()).doesNotContain("문맥상 반복 공격");
+        // 테스트 사용자 키의 실제 Redis 만료를 앞당겨 만료 후 전송 허용을 확인한다.
+        redis.expireAt(key, Instant.now().minusMillis(1));
+        assertThat(store.restriction(user)).isNull();
+        assertThatCode(() -> moderation.assertCanSend(user)).doesNotThrowAnyException();
+    }
+
     @Test void oneRedisSanctionBlocksBothChatAndDmBeforePersistence() {
         UUID user = UUID.randomUUID();
         String token = store.claimReview(user);
@@ -108,11 +139,18 @@ class ChatRestrictionStoreExternalRedisTest {
         var dm = new com.mopl.realtime.directmessage.service.DirectMessageService(
             org.mockito.Mockito.mock(com.mopl.realtime.directmessage.repository.ConversationRepository.class),
             org.mockito.Mockito.mock(com.mopl.realtime.directmessage.repository.DirectMessageRepository.class), moderation);
+        var state = store.restriction(user);
+        assertThat(state.level()).isEqualTo(SanctionLevel.TEMPORARY_SHORT);
         assertThatThrownBy(() -> chat.send(UUID.randomUUID(), user, "정상 메시지"))
             .isInstanceOf(ModerationException.class).extracting(exception -> ((ModerationException) exception).getErrorCode())
             .isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTED);
         assertThatThrownBy(() -> dm.send(UUID.randomUUID(), user, "정상 메시지"))
             .isInstanceOf(ModerationException.class).extracting(exception -> ((ModerationException) exception).getErrorCode())
             .isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTED);
+        var exception = catchThrowableOfType(() -> dm.send(UUID.randomUUID(), user, "정상 메시지"), ModerationException.class);
+        var response = new com.mopl.realtime.moderation.handler.ModerationErrorHandler().handle(exception);
+        assertThat(response.code()).isEqualTo("CHAT_RESTRICTED");
+        assertThat(response.restrictionLevel()).isEqualTo(state.level());
+        assertThat(response.restrictedUntil()).isEqualTo(state.restrictedUntil());
     }
 }

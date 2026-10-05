@@ -19,6 +19,27 @@ public class ChatRestrictionStore {
     private static String prefix(UUID userId) { return "moderation:{" + userId + "}:"; }
 
     public boolean restricted(UUID userId) { return Boolean.TRUE.equals(redis.hasKey(prefix(userId) + "restriction")); }
+    // 값과 절대 만료 시각을 같은 Redis 실행에서 읽어 서버 시계 차이나 조회 경쟁을 피한다.
+    private static final DefaultRedisScript<List> STATUS = new DefaultRedisScript<>("""
+        local value = redis.call('GET', KEYS[1])
+        if not value then return {} end
+        local expires = redis.call('PEXPIRETIME', KEYS[1])
+        return {value, expires}
+        """, List.class);
+
+    public Restriction restriction(UUID userId) {
+        List<?> result = redis.execute(STATUS, List.of(prefix(userId) + "restriction"));
+        if (result == null || result.isEmpty()) return null;
+        String value = result.get(0).toString();
+        int separator = value.indexOf(':');
+        SanctionLevel level = SanctionLevel.valueOf(separator < 0 ? value : value.substring(0, separator));
+        long expires = ((Number) result.get(1)).longValue();
+        if (expires < 0 || level == SanctionLevel.NONE) throw new IllegalStateException("Invalid restriction state");
+        return new Restriction(level, Instant.ofEpochMilli(expires));
+    }
+
+    public record Restriction(SanctionLevel level, Instant restrictedUntil) {}
+
     public String claimReview(UUID userId) {
         String token = UUID.randomUUID().toString();
         return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(prefix(userId) + "review", token,
