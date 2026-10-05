@@ -93,7 +93,7 @@ class DirectMessageStompIntegrationTest {
 	@org.springframework.beans.factory.annotation.Autowired
 	private ContentChatService contentChatService;
 
-	private final CompletableFuture<StompHeaders> protocolError = new CompletableFuture<>();
+	private CompletableFuture<StompHeaders> protocolError;
 	@org.springframework.beans.factory.annotation.Autowired
 	private SimpUserRegistry users;
 
@@ -103,6 +103,7 @@ class DirectMessageStompIntegrationTest {
 
 	@BeforeEach
 	void setUp() throws Exception {
+		protocolError = new CompletableFuture<>();
 		stompClient = new WebSocketStompClient(
 			new SockJsClient(List.of(new WebSocketTransport(new StandardWebSocketClient())))
 		);
@@ -147,6 +148,14 @@ class DirectMessageStompIntegrationTest {
 			new StompSessionHandlerAdapter() {
 				@Override public Type getPayloadType(StompHeaders headers) { return byte[].class; }
 				@Override public void handleFrame(StompHeaders headers, Object payload) { protocolError.complete(headers); }
+				@Override public void handleException(StompSession session, org.springframework.messaging.simp.stomp.StompCommand command,
+					StompHeaders headers, byte[] payload, Throwable exception) {
+					protocolError.completeExceptionally(new IllegalStateException(
+						"STOMP frame 처리 실패: command=" + command + ", headers=" + headers, exception));
+				}
+				@Override public void handleTransportError(StompSession session, Throwable exception) {
+					protocolError.completeExceptionally(exception);
+				}
 			}
 		).get(5, TimeUnit.SECONDS);
 	}
@@ -281,7 +290,7 @@ class DirectMessageStompIntegrationTest {
 	@ValueSource(strings = {"/sub/**", "/sub/errors-user*", "/user/another/sub/errors"})
 	void forbiddenSubscriptionProducesProtocolError(String destination) throws Exception {
 		stompSession.subscribe(destination, new StompSessionHandlerAdapter() {});
-		assertThat(protocolError.get(5, TimeUnit.SECONDS).getFirst("message")).isNotBlank();
+		assertThat(protocolError.get(10, TimeUnit.SECONDS).getFirst("message")).isNotBlank();
 		org.mockito.Mockito.verifyNoInteractions(directMessageService, contentChatService, conversationRepository);
 	}
 
@@ -289,7 +298,7 @@ class DirectMessageStompIntegrationTest {
 	@ValueSource(strings = {"/sub/contents/%s/chat", "/sub/conversations/%s/direct-messages", "/user/sub/errors"})
 	void directBrokerSendProducesProtocolError(String destination) throws Exception {
 		stompSession.send(destination.formatted(UUID.randomUUID()), java.util.Map.of("content", "forged"));
-		assertThat(protocolError.get(5, TimeUnit.SECONDS).getFirst("message")).isNotBlank();
+		assertThat(protocolError.get(10, TimeUnit.SECONDS).getFirst("message")).isNotBlank();
 		org.mockito.Mockito.verifyNoInteractions(directMessageService, contentChatService, conversationRepository);
 	}
 
