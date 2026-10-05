@@ -49,12 +49,15 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
     // 만료된 응답은 제한 UI를 다시 만들지 않는다.
     if (until <= Date.now()) return;
     if (error.restrictionLevel !== 'TEMPORARY_SHORT' && error.restrictionLevel !== 'TEMPORARY_LONG') return;
+    const current = get().restriction;
+    if (current && Date.parse(current.restrictedUntil) >= until) return;
     const restriction: ChatRestriction = {
       restrictionLevel: error.restrictionLevel, restrictedUntil: error.restrictedUntil as string,
     };
     if (restrictionTimer !== undefined) clearTimeout(restrictionTimer);
     set({ restriction });
     const clearWhenExpired = () => {
+      if (get().restriction !== restriction) return;
       const remaining = until - Date.now();
       if (remaining > 0) restrictionTimer = setTimeout(clearWhenExpired, Math.min(remaining, 2147483647));
       else { restrictionTimer = undefined; set({ restriction: null }); }
@@ -68,15 +71,12 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   subscriptions: new Map(),
 
   connect: async (accessToken: string) => {
-    const { isConnected, isConnecting } = get();
-    if (isConnected || isConnecting) return;
-
-    set({ isConnecting: true });
+    // 재연결은 기존 Client가 담당하며 화면의 connect 호출은 중복 생성하지 않는다.
+    if (get().stompClient) return;
 
     const BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-    const socket = new SockJS(`${BASE_URL}/ws`);
     const client = new Client({
-      webSocketFactory: () => socket,
+      webSocketFactory: () => new SockJS(`${BASE_URL}/ws`),
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -88,9 +88,12 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
       heartbeatOutgoing: 4000,
     });
 
+    const isCurrent = () => get().stompClient === client;
     client.onConnect = () => {
+      if (!isCurrent()) return;
       // 재연결에서도 사용자 전용 오류를 방 구독보다 먼저 등록한다.
       const errors = client.subscribe('/user/sub/errors', (message) => {
+        if (!isCurrent() || !get().isConnected) return;
         try { get().handleModerationError(JSON.parse(message.body)); }
         catch { toast.error('메시지 전송 오류를 확인할 수 없습니다.'); }
       });
@@ -100,23 +103,27 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
     };
 
     client.onStompError = (frame) => {
+      if (!isCurrent()) return;
       console.error('STOMP 에러:', frame);
-      set({ isConnected: false, stompClient: null, isConnecting: false, subscriptions: new Map() });
+      set({ isConnected: false, isConnecting: true, subscriptions: new Map() });
     };
 
     client.onWebSocketClose = () => {
-      set({ isConnected: false, stompClient: null, isConnecting: false, subscriptions: new Map() });
+      if (!isCurrent()) return;
+      set({ isConnected: false, isConnecting: true, subscriptions: new Map() });
     };
 
+    set({ stompClient: client, isConnecting: true });
     client.activate();
   },
 
   disconnect: () => {
-    const { stompClient, isConnected } = get();
-    if (stompClient && isConnected) stompClient.deactivate();
+    const { stompClient } = get();
     if (restrictionTimer !== undefined) clearTimeout(restrictionTimer);
     restrictionTimer = undefined;
     set({ stompClient: null, isConnected: false, isConnecting: false, subscriptions: new Map(), restriction: null });
+    // 상태를 먼저 비워 이전 연결의 지연된 callback을 무시한다.
+    if (stompClient) void stompClient.deactivate();
   },
 
   subscribe: (destination: string, callback: <T>(message: T) => void) => {
@@ -127,6 +134,7 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
     }
 
     const subscription: StompSubscription = stompClient.subscribe(destination, (message) => {
+      if (get().stompClient !== stompClient || !get().isConnected) return;
       const payload = JSON.parse(message.body);
       callback(payload);
     });
