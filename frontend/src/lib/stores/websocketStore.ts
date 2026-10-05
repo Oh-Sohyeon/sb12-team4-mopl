@@ -80,9 +80,8 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`,
       },
-      debug: (str) => {
-        console.log(str);
-      },
+      // STOMP 프레임에 Authorization 헤더가 포함될 수 있어 debug 출력을 끈다.
+      debug: () => {},
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,

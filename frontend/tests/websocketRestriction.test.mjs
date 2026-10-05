@@ -15,6 +15,7 @@ const source = readFileSync(new URL('../src/lib/stores/websocketStore.ts', impor
 async function setup() {
   const clients = [];
   const toasts = [];
+  const consoleOutput = [];
   let now = Date.now();
   const timers = new Map();
   let timerId = 0;
@@ -33,7 +34,7 @@ async function setup() {
   }
   class TestDate extends Date { static now() { return now; } }
   const context = vm.createContext({
-    console: { log() {}, error() {}, warn() {} }, Date: TestDate,
+    console: { log(...args) { consoleOutput.push(args.join(' ')); }, error() {}, warn() {} }, Date: TestDate,
     setTimeout: (callback, delay) => { const id = ++timerId; timers.set(id, { callback, at: now + delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
   });
@@ -68,7 +69,7 @@ async function setup() {
   client.onConnect();
   const error = (overrides = {}) => ({ code: 'CHAT_RESTRICTED', message: '채팅 이용이 일시적으로 제한되었습니다.',
     restrictionLevel: 'TEMPORARY_SHORT', restrictedUntil: new Date(now + 60000).toISOString(), ...overrides });
-  return { store, auth, client, clients, toasts, error, timers, advance: (milliseconds) => {
+  return { store, auth, client, clients, toasts, consoleOutput, error, timers, advance: (milliseconds) => {
     now += milliseconds;
     for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.callback(); }
   } };
@@ -226,4 +227,11 @@ test('최초 연결 중 disconnect도 client를 종료하고 늦은 연결 성�
   connecting.onConnect();
   assert.equal(connecting.deactivated, true);
   assert.equal(store.getState().isConnected, false);
+});
+
+
+test('STOMP frame debug does not write Authorization or Bearer tokens to console', async () => {
+  const { client, consoleOutput } = await setup();
+  client.debug('>>> CONNECT\nAuthorization:Bearer sensitive-token');
+  assert.equal(consoleOutput.some((line) => /Authorization|Bearer|sensitive-token/.test(line)), false);
 });

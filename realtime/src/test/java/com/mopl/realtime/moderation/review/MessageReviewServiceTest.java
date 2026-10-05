@@ -14,12 +14,17 @@ import com.mopl.realtime.moderation.support.MessageReviewTestSettings;
 import com.mopl.realtime.moderation.support.ModerationTestSettings;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.*;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.transaction.TransactionDefinition;
@@ -61,13 +66,40 @@ class MessageReviewServiceTest {
         tx.executeWithoutResult(status -> service.reviewAfterCommit(user, MessageType.DM, target, message, text));
     }
     private void outcome(String value) {
-        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> {
             var counter = meters.find("moderation.message.reviews").tag("outcome", value).counter();
             assertThat(counter).isNotNull();
             assertThat(counter.count()).isEqualTo(1);
         });
     }
-    private void drain() throws Exception { executor.submit(() -> { }).get(3, TimeUnit.SECONDS); }
+    private void drain() throws Exception { executor.submit(() -> { }).get(8, TimeUnit.SECONDS); }
+
+    @Test void routineObservationUsesDebugAndFailureObservationRemainsInfo() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ReviewObservation.class);
+        Level originalLevel = logger.getLevel();
+        ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            logger.setLevel(Level.DEBUG);
+            var observation = new ReviewObservation(Instant.now().plusSeconds(10));
+            observation.event("message_review_started", "");
+            observation.event("message_llm_started", "contextSize=2");
+            observation.event("message_review_finished", "outcome=allow");
+            observation.event("review_finished", "outcome=completed");
+            assertThat(appender.list).hasSize(4);
+            assertThat(appender.list).allMatch(event -> event.getLevel() == Level.DEBUG);
+
+            observation.event("message_review_finished", "outcome=timeout");
+            observation.event("review_finished", "outcome=error");
+            assertThat(appender.list.subList(4, 6)).allMatch(event -> event.getLevel() == Level.INFO);
+            assertThat(appender.list.toString()).doesNotContain("Authorization", "Bearer", "prompt", "API key");
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(originalLevel);
+            appender.stop();
+        }
+    }
 
     @Test void noWorkBeforeCommitOrAfterRollbackOrOutsideTransaction() throws Exception {
         MessageReviewer reviewer = mock(MessageReviewer.class);
@@ -140,10 +172,12 @@ class MessageReviewServiceTest {
     }
     @Test void fullQueueDoesNotRunContextOrModelOrRecord() throws Exception {
         var release = new CountDownLatch(1);
+        var started = new CountDownLatch(1);
         var bounded = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
         MessageReviewer reviewer = mock(MessageReviewer.class);
         try {
-            bounded.submit(() -> { release.await(); return null; });
+            bounded.submit(() -> { started.countDown(); release.await(); return null; });
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
             bounded.submit(() -> { });
             var service = new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
                 MessageReviewTestSettings.defaults(), meters, bounded, scheduler);
@@ -156,47 +190,69 @@ class MessageReviewServiceTest {
     }
     @Test void queueWaitConsumesDeadlineWithoutCallingModel() throws Exception {
         var release = new CountDownLatch(1);
-        executor.submit(() -> { release.await(); return null; });
+        var started = new CountDownLatch(1);
+        var expiration = new AtomicReference<Runnable>();
+        executor.submit(() -> { started.countDown(); release.await(); return null; });
+        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
         MessageReviewer reviewer = mock(MessageReviewer.class);
-        try { submit(service(reviewer, Duration.ofMillis(50))); outcome("timeout"); }
-        finally { release.countDown(); }
+        try {
+            submit(new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+                MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration)));
+            expiration.get().run();
+            outcome("timeout");
+        } finally { release.countDown(); }
         drain(); verifyNoInteractions(contexts, reviewer, logs, sanctions);
     }
     @Test void contextTimeConsumesDeadlineWithoutCallingModel() throws Exception {
         var release = new CountDownLatch(1);
+        var contextStarted = new CountDownLatch(1);
+        var expiration = new AtomicReference<Runnable>();
         when(contexts.loadMessage(user, MessageType.DM, target, message, text)).thenAnswer(invocation -> {
+            contextStarted.countDown();
             awaitIgnoringInterrupts(release); return new MessageReviewContext(text, List.of());
         });
         MessageReviewer reviewer = mock(MessageReviewer.class);
-        try { submit(service(reviewer, Duration.ofMillis(50))); outcome("timeout"); }
-        finally { release.countDown(); }
+        try {
+            submit(new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+                MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration)));
+            assertThat(contextStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            expiration.get().run();
+            outcome("timeout");
+        } finally { release.countDown(); }
         drain(); verifyNoInteractions(reviewer, logs, sanctions);
     }
     @Test void timeoutDiscardsLateViolationEvenIfModelIgnoresCancellation() throws Exception {
         var started = new CountDownLatch(1); var release = new CountDownLatch(1);
-        var service = service(context -> {
+        var expiration = new AtomicReference<Runnable>();
+        var service = new MessageReviewService(contexts, context -> {
             started.countDown(); awaitIgnoringInterrupts(release);
             return new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION);
-        }, Duration.ofMillis(150));
+        }, logs, sanctions, ModerationTestSettings.defaults(),
+            MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration));
         try {
-            submit(service); assertThat(started.await(1, TimeUnit.SECONDS)).isTrue(); outcome("timeout");
+            submit(service);
+            assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+            expiration.get().run();
+            outcome("timeout");
         } finally { release.countDown(); }
         drain(); verifyNoInteractions(logs, sanctions);
         assertThat(meters.find("moderation.message.reviews").tag("outcome", "violation").counter()).isNull();
     }
     @Test void deadlineCheckRejectsLateResultEvenWhenTimerIsDelayed() throws Exception {
         ScheduledExecutorService delayed = mock(ScheduledExecutorService.class);
-        when(delayed.schedule(any(Runnable.class), anyLong(), eq(TimeUnit.NANOSECONDS)))
-            .thenReturn(mock(ScheduledFuture.class));
-        var deadlinePassed = new AtomicBoolean(); var started = new CountDownLatch(1);
+        var deadline = new AtomicLong();
+        when(delayed.schedule(any(Runnable.class), anyLong(), eq(TimeUnit.NANOSECONDS))).thenAnswer(invocation -> {
+            deadline.set(System.nanoTime() + invocation.getArgument(1, Long.class));
+            return mock(ScheduledFuture.class);
+        });
+        var started = new CountDownLatch(1);
         var service = new MessageReviewService(contexts, context -> {
             started.countDown();
-            await().atMost(Duration.ofSeconds(3)).untilTrue(deadlinePassed);
+            await().atMost(Duration.ofSeconds(10)).until(() -> System.nanoTime() - deadline.get() >= 0);
             return new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION);
-        }, logs, sanctions, ModerationTestSettings.defaults(), MessageReviewTestSettings.withTimeout(Duration.ofMillis(100)),
+        }, logs, sanctions, ModerationTestSettings.defaults(), MessageReviewTestSettings.withTimeout(Duration.ofSeconds(5)),
             meters, executor, delayed);
-        submit(service); assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
-        scheduler.schedule(() -> deadlinePassed.set(true), 150, TimeUnit.MILLISECONDS);
+        submit(service); assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
         drain(); outcome("timeout"); verifyNoInteractions(logs, sanctions);
     }
     @Test void acceptedViolationCannotBeRecordedTwiceByLateTimer() throws Exception {
@@ -221,6 +277,15 @@ class MessageReviewServiceTest {
         assertThat(meters.find("moderation.violations").counter()).isNull();
         verifyNoInteractions(sanctions);
     }
+    private static ScheduledExecutorService manualTimeout(AtomicReference<Runnable> expiration) {
+        ScheduledExecutorService manual = mock(ScheduledExecutorService.class);
+        when(manual.schedule(any(Runnable.class), anyLong(), eq(TimeUnit.NANOSECONDS))).thenAnswer(invocation -> {
+            expiration.set(invocation.getArgument(0));
+            return mock(ScheduledFuture.class);
+        });
+        return manual;
+    }
+
     private static void awaitIgnoringInterrupts(CountDownLatch latch) {
         boolean interrupted = false;
         for (;;) {
