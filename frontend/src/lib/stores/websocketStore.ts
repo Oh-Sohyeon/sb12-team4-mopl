@@ -37,7 +37,11 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   handleModerationError: (payload: unknown) => {
     if (!payload || typeof payload !== 'object') return;
     const error = payload as Record<string, unknown>;
-    if (error.code !== 'CHAT_RESTRICTED' && error.code !== 'MODERATION_002') {
+    if (error.code !== 'CHAT_RESTRICTED') {
+      if (error.code === 'CHAT_RESTRICTION_CHECK_FAILED') {
+        toast.error('채팅 상태를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
       if (typeof error.message === 'string') toast.error(error.message);
       return;
     }

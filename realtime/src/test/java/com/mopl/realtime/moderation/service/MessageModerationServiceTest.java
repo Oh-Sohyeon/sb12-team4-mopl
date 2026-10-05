@@ -72,4 +72,19 @@ class MessageModerationServiceTest {
             .extracting(e -> ((ModerationException)e).getErrorCode()).isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTED);
         verifyNoInteractions(logs,reviews,messageReviews);
     }
+    @Test void restrictionLookupFailureUsesRetryableErrorAndKeepsFailClosedPolicy() {
+        var redisFailure = new IllegalStateException("redis unavailable");
+        when(restrictions.restriction(user)).thenThrow(redisFailure);
+        assertThatThrownBy(() -> service.assertCanSend(user))
+            .isInstanceOf(ModerationException.class)
+            .satisfies(exception -> {
+                var moderationException = (ModerationException) exception;
+                assertThat(moderationException.getErrorCode()).isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTION_CHECK_FAILED);
+                assertThat(moderationException.getCause()).isSameAs(redisFailure);
+                assertThat(moderationException.getErrorCode().getStatus()).isEqualTo(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+                assertThat(moderationException.getRestriction()).isNull();
+            });
+        verifyNoInteractions(logs,reviews,messageReviews);
+        assertThat(meters.get("moderation.messages").tag("outcome", "restriction_check_error").counter().count()).isEqualTo(1);
+    }
 }

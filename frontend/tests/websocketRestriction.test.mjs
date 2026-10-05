@@ -117,6 +117,14 @@ test('이미 만료됐거나 잘못된 payload가 제한 UI를 만들지 않는�
   assert.equal(store.getState().restriction, null);
 });
 
+test('Redis 제재 조회 오류는 재시도 안내만 보이고 restriction 상태를 만들지 않는다', async () => {
+  const { store, toasts } = await setup();
+  store.getState().handleModerationError({ code: 'CHAT_RESTRICTION_CHECK_FAILED',
+    message: '채팅 상태를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
+  assert.equal(store.getState().restriction, null);
+  assert.equal(toasts[0], '채팅 상태를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+});
+
 test('제재 연장 시 이전 timer가 새 제재 상태를 지우지 않는다', async () => {
   const { store, error, advance } = await setup();
   store.getState().handleModerationError(error());

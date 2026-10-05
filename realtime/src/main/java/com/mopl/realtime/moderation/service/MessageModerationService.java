@@ -17,11 +17,14 @@ import io.micrometer.core.instrument.Timer;
 import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class MessageModerationService {
+    private static final Logger log = LoggerFactory.getLogger(MessageModerationService.class);
     private final ChatRestrictionStore restrictions;
     private final ProfanityRule rule;
     private final MessageReviewService messageReviews;
@@ -32,7 +35,14 @@ public class MessageModerationService {
 
     public void assertCanSend(UUID userId) {
         meters.counter("moderation.message.received").increment();
-        var restriction = restrictions.restriction(userId);
+        final ChatRestrictionStore.Restriction restriction;
+        try {
+            restriction = restrictions.restriction(userId);
+        } catch (RuntimeException exception) {
+            log.warn("Redis 채팅 제한 상태 조회 실패. 전송을 차단합니다.", exception);
+            meters.counter("moderation.messages", "outcome", "restriction_check_error").increment();
+            throw new ModerationException(ModerationException.ErrorCode.CHAT_RESTRICTION_CHECK_FAILED, exception);
+        }
         if (restriction != null) {
             meters.counter("moderation.messages", "outcome", "restricted").increment();
             throw new ModerationException(ModerationException.ErrorCode.CHAT_RESTRICTED, restriction);

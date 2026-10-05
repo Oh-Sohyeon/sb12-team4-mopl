@@ -253,6 +253,23 @@ class ModeratedMessageDeliveryTest {
         assertDelivery(type,"만료 후 정상 메시지");
         verifyNoInteractions(logs,sanctions);
     }
+    @ParameterizedTest @EnumSource(MessageType.class)
+    void restrictionLookupFailureUsesDistinctErrorAndRecoveryAllowsBothChannels(MessageType type) {
+        when(restrictions.restriction(userId)).thenThrow(new IllegalStateException("redis unavailable"));
+        var exception = catchThrowableOfType(() -> send(type,"첫 메시지"), ModerationException.class);
+        var response = new com.mopl.realtime.moderation.handler.ModerationErrorHandler().handle(exception);
+        assertThat(exception.getErrorCode()).isEqualTo(ModerationException.ErrorCode.CHAT_RESTRICTION_CHECK_FAILED);
+        assertThat(response.code()).isEqualTo("CHAT_RESTRICTION_CHECK_FAILED");
+        assertThat(response.message()).isEqualTo("채팅 상태를 확인하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        assertThat(response.restrictionLevel()).isNull();
+        assertThat(response.restrictedUntil()).isNull();
+        verify(chats,never()).save(any());verify(messages,never()).save(any());
+        verifyNoInteractions(broadcasts,messageReview,logs,sanctions);
+
+        doReturn(null).when(restrictions).restriction(userId);
+        send(type,"복구 후 정상 메시지");
+        assertDelivery(type,"복구 후 정상 메시지");
+    }
     private void send(MessageType type,String text) {
         Principal principal=() -> userId.toString();
         if(type==MessageType.DM) dmController.send(targetId,new DirectMessageSendRequest(text),principal);
