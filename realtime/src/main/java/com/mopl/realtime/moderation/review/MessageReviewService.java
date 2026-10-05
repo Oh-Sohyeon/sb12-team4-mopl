@@ -4,6 +4,7 @@ import com.mopl.core.common.enums.MessageType;
 import com.mopl.realtime.moderation.config.MessageReviewProperties;
 import com.mopl.realtime.moderation.config.ModerationProperties;
 import com.mopl.realtime.moderation.dto.MessageReviewDecision;
+import com.mopl.realtime.moderation.dto.RuleAction;
 import com.mopl.realtime.moderation.exception.InvalidMessageReviewResponseException;
 import com.mopl.realtime.moderation.service.ModerationContextService;
 import com.mopl.realtime.moderation.service.ModerationLogService;
@@ -31,6 +32,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class MessageReviewService {
     private final ModerationContextService contexts;
     private final MessageReviewer reviewer;
+    private final MessageReviewRoutingFilter routingFilter;
     private final ModerationLogService logs;
     private final ModerationReviewDispatcher sanctions;
     private final ModerationProperties moderationProperties;
@@ -39,23 +41,26 @@ public class MessageReviewService {
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduler;
 
-    public MessageReviewService(ModerationContextService contexts, MessageReviewer reviewer, ModerationLogService logs,
+    public MessageReviewService(ModerationContextService contexts, MessageReviewer reviewer,
+        MessageReviewRoutingFilter routingFilter, ModerationLogService logs,
         ModerationReviewDispatcher sanctions, ModerationProperties moderationProperties, MessageReviewProperties properties,
         MeterRegistry meters, @Qualifier("moderationMessageExecutor") ExecutorService executor,
         @Qualifier("moderationMessageScheduler") ScheduledExecutorService scheduler) {
-        this.contexts = contexts; this.reviewer = reviewer; this.logs = logs; this.sanctions = sanctions;
+        this.contexts = contexts; this.reviewer = reviewer; this.routingFilter = routingFilter;
+        this.logs = logs; this.sanctions = sanctions;
         this.moderationProperties = moderationProperties; this.properties = properties;
         this.meters = meters; this.executor = executor; this.scheduler = scheduler;
     }
 
-    public void reviewAfterCommit(UUID senderId, MessageType type, UUID targetId, UUID messageId, String text) {
+    public void reviewAfterCommit(UUID senderId, MessageType type, UUID targetId, UUID messageId, String text,
+        RuleAction ruleAction) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()
             || !TransactionSynchronizationManager.isSynchronizationActive()) {
             // 커밋 성공을 확인할 수 없는 호출에서는 사후 위반을 판정하지 않는다.
             meters.counter("moderation.message.review.submissions", "outcome", "no_transaction").increment();
             return;
         }
-        var request = new ReviewRequest(senderId, type, targetId, messageId, text);
+        var request = new ReviewRequest(senderId, type, targetId, messageId, text, ruleAction);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override public void afterCommit() { submit(request); }
         });
@@ -84,6 +89,10 @@ public class MessageReviewService {
             var context = contexts.loadMessage(request.senderId(), request.type(), request.targetId(),
                 request.messageId(), request.text());
             if (!job.canRun()) return;
+            if (!routingFilter.shouldRoute(request.ruleAction(), context)) {
+                job.finish(Outcome.SKIPPED);
+                return;
+            }
             meters.counter("moderation.message.llm.calls").increment();
             job.observation.event("message_llm_started", "contextSize=" + context.recentConversation().size());
             Timer.Sample sample = Timer.start(meters);
@@ -124,10 +133,11 @@ public class MessageReviewService {
         return false;
     }
 
-    private record ReviewRequest(UUID senderId, MessageType type, UUID targetId, UUID messageId, String text) {
+    private record ReviewRequest(UUID senderId, MessageType type, UUID targetId, UUID messageId, String text,
+                                 RuleAction ruleAction) {
         @Override public String toString() { return "ReviewRequest[messageId=" + messageId + "]"; }
     }
-    private enum Outcome { ALLOW, VIOLATION, TIMEOUT, ERROR, INVALID_RESPONSE, QUEUE_FULL }
+    private enum Outcome { ALLOW, VIOLATION, SKIPPED, TIMEOUT, ERROR, INVALID_RESPONSE, QUEUE_FULL }
 
     private final class ReviewJob {
         private final ReviewRequest request;

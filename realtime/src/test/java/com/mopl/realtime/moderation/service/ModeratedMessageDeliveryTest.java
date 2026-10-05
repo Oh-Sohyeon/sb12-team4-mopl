@@ -92,7 +92,7 @@ class ModeratedMessageDeliveryTest {
         var order = inOrder(type == MessageType.DM ? messages : chats, messageReview, broadcasts);
         if (type == MessageType.DM) order.verify(messages).save(any(DirectMessage.class));
         else order.verify(chats).save(any(ContentChatMessage.class));
-        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq("꺼져"));
+        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq("꺼져"),eq(RuleAction.REVIEW));
         order.verify(broadcasts).convertAndSend(anyString(),any(Object.class));
         verifyNoInteractions(logs,sanctions);
     }
@@ -110,7 +110,7 @@ class ModeratedMessageDeliveryTest {
         var order = inOrder(type == MessageType.DM ? messages : chats, messageReview, broadcasts);
         if (type == MessageType.DM) order.verify(messages).save(any(DirectMessage.class));
         else order.verify(chats).save(any(ContentChatMessage.class));
-        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq(text));
+        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq(text),eq(RuleAction.ALLOW));
         order.verify(broadcasts).convertAndSend(anyString(),any(Object.class));
         verifyNoInteractions(logs,sanctions);
     }
@@ -136,7 +136,7 @@ class ModeratedMessageDeliveryTest {
             started.countDown();
             try { release.await(); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
             return new MessageReviewDecision(action);
-        },logs,sanctions,ModerationTestSettings.defaults(),MessageReviewTestSettings.defaults(),meters,worker,scheduler);
+        },new MessageReviewRoutingFilter(),logs,sanctions,ModerationTestSettings.defaults(),MessageReviewTestSettings.defaults(),meters,worker,scheduler);
         configureControllers(reviews,meters);
         try {
             transaction().executeWithoutResult(status -> {
@@ -176,7 +176,7 @@ class ModeratedMessageDeliveryTest {
         var scheduler=mock(ScheduledExecutorService.class);
         var meters=new SimpleMeterRegistry();
         try {
-            configureControllers(new MessageReviewService(contexts,reviewer,logs,sanctions,
+            configureControllers(new MessageReviewService(contexts,reviewer,new MessageReviewRoutingFilter(),logs,sanctions,
                 ModerationTestSettings.defaults(),MessageReviewTestSettings.defaults(),meters,worker,scheduler),meters);
             transaction().executeWithoutResult(status -> {
                 send(type,"부모 얼굴이 궁금하다");
@@ -206,7 +206,7 @@ class ModeratedMessageDeliveryTest {
             if (outcome.equals("invalid_response")) throw new com.mopl.realtime.moderation.exception.InvalidMessageReviewResponseException();
             throw new IllegalStateException("model error");
         });
-        configureControllers(new MessageReviewService(contexts,reviewer,logs,sanctions,ModerationTestSettings.defaults(),
+        configureControllers(new MessageReviewService(contexts,reviewer,new MessageReviewRoutingFilter(),logs,sanctions,ModerationTestSettings.defaults(),
             MessageReviewTestSettings.defaults(),meters,outcome.equals("queue_full") ? rejected : worker,scheduler),meters);
         try {
             transaction().executeWithoutResult(status -> {

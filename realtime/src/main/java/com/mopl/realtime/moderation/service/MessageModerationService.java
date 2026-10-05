@@ -73,8 +73,9 @@ public class MessageModerationService {
         }
     }
 
-    public void reviewAfterCommit(UUID userId, MessageType type, UUID targetId, UUID messageId, String original) {
-        messageReviews.reviewAfterCommit(userId, type, targetId, messageId, original);
+    public void reviewAfterCommit(UUID userId, MessageType type, UUID targetId, UUID messageId, String original,
+        RuleAction action) {
+        messageReviews.reviewAfterCommit(userId, type, targetId, messageId, original, action);
     }
 
     private void violation(UUID userId, MessageType type, UUID targetId, String original,

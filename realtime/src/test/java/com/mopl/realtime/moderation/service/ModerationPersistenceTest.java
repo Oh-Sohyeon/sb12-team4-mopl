@@ -247,7 +247,7 @@ class ModerationPersistenceTest {
             UUID target = type==MessageType.DM ? conversationId : contentId;
             tx.executeWithoutResult(status -> {
                 UUID rolledBack = saveMessage(type,"가정교육 수준 보인다");
-                service.reviewAfterCommit(userId,type,target,rolledBack,"가정교육 수준 보인다");
+                service.reviewAfterCommit(userId,type,target,rolledBack,"가정교육 수준 보인다", com.mopl.realtime.moderation.dto.RuleAction.ALLOW);
                 assertThat(started.getCount()).isEqualTo(1);
                 status.setRollbackOnly();
             });
@@ -255,7 +255,7 @@ class ModerationPersistenceTest {
             assertThat(started.getCount()).isEqualTo(1);
             committed = tx.execute(status -> {
                 UUID id = saveMessage(type,"가정교육 수준 보인다");
-                service.reviewAfterCommit(userId,type,target,id,"가정교육 수준 보인다");
+                service.reviewAfterCommit(userId,type,target,id,"가정교육 수준 보인다", com.mopl.realtime.moderation.dto.RuleAction.ALLOW);
                 assertThat(started.getCount()).isEqualTo(1);
                 return id;
             });

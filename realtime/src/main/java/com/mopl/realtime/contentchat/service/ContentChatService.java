@@ -56,7 +56,7 @@ public class ContentChatService {
 			contentChatMessageRepository.save(contentChatMessage);
 
 		if (decision.action() != RuleAction.MASK) {
-			moderation.reviewAfterCommit(senderId, MessageType.CONTENT_CHAT, contentId, saved.getId(), message);
+			moderation.reviewAfterCommit(senderId, MessageType.CONTENT_CHAT, contentId, saved.getId(), message, decision.action());
 		}
 
 		return ContentChatResponse.from(saved);

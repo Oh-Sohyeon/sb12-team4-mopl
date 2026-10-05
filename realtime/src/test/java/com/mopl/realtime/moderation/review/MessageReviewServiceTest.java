@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.mopl.core.common.enums.MessageType;
 import com.mopl.realtime.moderation.dto.MessageReviewContext;
 import com.mopl.realtime.moderation.dto.MessageReviewDecision;
+import com.mopl.realtime.moderation.dto.RuleAction;
 import com.mopl.realtime.moderation.exception.InvalidMessageReviewResponseException;
 import com.mopl.realtime.moderation.service.ModerationContextService;
 import com.mopl.realtime.moderation.service.ModerationLogService;
@@ -59,11 +60,14 @@ class MessageReviewServiceTest {
         meters.close();
     }
     private MessageReviewService service(MessageReviewer reviewer, Duration timeout) {
-        return new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+        return new MessageReviewService(contexts, reviewer, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(),
             MessageReviewTestSettings.withTimeout(timeout), meters, executor, scheduler);
     }
     private void submit(MessageReviewService service) {
-        tx.executeWithoutResult(status -> service.reviewAfterCommit(user, MessageType.DM, target, message, text));
+        submit(service, RuleAction.REVIEW, text);
+    }
+    private void submit(MessageReviewService service, RuleAction action, String messageText) {
+        tx.executeWithoutResult(status -> service.reviewAfterCommit(user, MessageType.DM, target, message, messageText, action));
     }
     private void outcome(String value) {
         await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> {
@@ -105,11 +109,11 @@ class MessageReviewServiceTest {
         MessageReviewer reviewer = mock(MessageReviewer.class);
         var service = service(reviewer, Duration.ofSeconds(1));
         tx.executeWithoutResult(status -> {
-            service.reviewAfterCommit(user, MessageType.DM, target, message, text);
+            service.reviewAfterCommit(user, MessageType.DM, target, message, text, RuleAction.REVIEW);
             verifyNoInteractions(reviewer, contexts);
             status.setRollbackOnly();
         });
-        service.reviewAfterCommit(user, MessageType.DM, target, message, text);
+        service.reviewAfterCommit(user, MessageType.DM, target, message, text, RuleAction.REVIEW);
         drain();
         verifyNoInteractions(reviewer, contexts, logs, sanctions);
     }
@@ -147,6 +151,17 @@ class MessageReviewServiceTest {
         submit(service(context -> new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION), Duration.ofSeconds(1)));
         drain(); verify(logs, never()).recentCount(any()); verifyNoInteractions(sanctions);
     }
+    @Test void clearlyNormalAllowIsSkippedAfterCommitWithoutCallingReviewer() throws Exception {
+        String normalQuestion = "오늘 경기 몇 시에 시작해?";
+        when(contexts.loadMessage(user, MessageType.DM, target, message, normalQuestion))
+            .thenReturn(new MessageReviewContext(normalQuestion, List.of()));
+        MessageReviewer reviewer = mock(MessageReviewer.class);
+        submit(service(reviewer, Duration.ofSeconds(1)), RuleAction.ALLOW, normalQuestion);
+        drain(); outcome("skipped");
+        verify(contexts).loadMessage(user, MessageType.DM, target, message, normalQuestion);
+        verifyNoInteractions(reviewer, logs, sanctions);
+        assertThat(meters.find("moderation.message.llm.calls").counter()).isNull();
+    }
     @Test void belowThresholdDoesNotSubmitSanction() throws Exception {
         when(logs.recordReviewedViolation(message, MessageType.DM, text)).thenReturn(true);
         when(logs.recentCount(user)).thenReturn(2L);
@@ -179,7 +194,7 @@ class MessageReviewServiceTest {
             bounded.submit(() -> { started.countDown(); release.await(); return null; });
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
             bounded.submit(() -> { });
-            var service = new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+            var service = new MessageReviewService(contexts, reviewer, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(),
                 MessageReviewTestSettings.defaults(), meters, bounded, scheduler);
             submit(service); outcome("queue_full");
             verifyNoInteractions(contexts, reviewer, logs, sanctions);
@@ -196,7 +211,7 @@ class MessageReviewServiceTest {
         assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
         MessageReviewer reviewer = mock(MessageReviewer.class);
         try {
-            submit(new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+            submit(new MessageReviewService(contexts, reviewer, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(),
                 MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration)));
             expiration.get().run();
             outcome("timeout");
@@ -213,7 +228,7 @@ class MessageReviewServiceTest {
         });
         MessageReviewer reviewer = mock(MessageReviewer.class);
         try {
-            submit(new MessageReviewService(contexts, reviewer, logs, sanctions, ModerationTestSettings.defaults(),
+            submit(new MessageReviewService(contexts, reviewer, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(),
                 MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration)));
             assertThat(contextStarted.await(5, TimeUnit.SECONDS)).isTrue();
             expiration.get().run();
@@ -227,7 +242,7 @@ class MessageReviewServiceTest {
         var service = new MessageReviewService(contexts, context -> {
             started.countDown(); awaitIgnoringInterrupts(release);
             return new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION);
-        }, logs, sanctions, ModerationTestSettings.defaults(),
+        }, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(),
             MessageReviewTestSettings.withTimeout(Duration.ofSeconds(10)), meters, executor, manualTimeout(expiration));
         try {
             submit(service);
@@ -250,7 +265,7 @@ class MessageReviewServiceTest {
             started.countDown();
             await().atMost(Duration.ofSeconds(10)).until(() -> System.nanoTime() - deadline.get() >= 0);
             return new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION);
-        }, logs, sanctions, ModerationTestSettings.defaults(), MessageReviewTestSettings.withTimeout(Duration.ofSeconds(5)),
+        }, new MessageReviewRoutingFilter(), logs, sanctions, ModerationTestSettings.defaults(), MessageReviewTestSettings.withTimeout(Duration.ofSeconds(5)),
             meters, executor, delayed);
         submit(service); assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
         drain(); outcome("timeout"); verifyNoInteractions(logs, sanctions);
@@ -263,6 +278,7 @@ class MessageReviewServiceTest {
         });
         when(logs.recordReviewedViolation(message, MessageType.DM, text)).thenReturn(true);
         var service = new MessageReviewService(contexts, context -> new MessageReviewDecision(MessageReviewDecision.Action.VIOLATION),
+            new MessageReviewRoutingFilter(),
             logs, sanctions, ModerationTestSettings.defaults(), MessageReviewTestSettings.defaults(), meters, executor, manual);
         submit(service); drain(); expiration.get().run(); expiration.get().run();
         verify(logs, times(1)).recordReviewedViolation(message, MessageType.DM, text);

@@ -62,7 +62,7 @@ public class DirectMessageService {
 		DirectMessage saved = directMessageRepository.save(directMessage);
 
 		if (decision.action() != RuleAction.MASK) {
-			moderation.reviewAfterCommit(senderId, MessageType.DM, conversationId, saved.getId(), content);
+			moderation.reviewAfterCommit(senderId, MessageType.DM, conversationId, saved.getId(), content, decision.action());
 		}
 
 		return DirectMessageResponse.from(saved);
