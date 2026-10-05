@@ -30,15 +30,20 @@ public class ModerationContextService {
         var since = LocalDateTime.now().minus(properties.violationWindow());
         var violations = logs.findBySender_IdAndDetectionSourceInAndModerationActionInAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
             userId, List.of(DetectionSource.RULE, DetectionSource.LLM),
-            List.of(ModerationAction.MASK, ModerationAction.BLOCK), since, page).stream()
+            ModerationLogService.CONFIRMED_ACTIONS, since, page).stream()
             .map(log -> new ContextMessage(userId, log.getCreatedAt(), log.getOriginalContent())).toList();
         var recent = recent(type, targetId);
         return new ReviewContext(userId, type, currentMessage, recent, violations);
     }
 
     @Transactional(readOnly = true)
-    public MessageReviewContext loadMessage(UUID userId, MessageType type, UUID targetId, String currentMessage) {
-        var recent = recent(type, targetId).stream()
+    public MessageReviewContext loadMessage(UUID userId, MessageType type, UUID targetId, UUID messageId, String currentMessage) {
+        var page = PageRequest.of(0, properties.contextLimit());
+        var recent = (type == MessageType.DM
+            ? messages.findByConversation_IdAndIdNotOrderByCreatedAtDesc(targetId, messageId, page).stream()
+                .map(message -> new ContextMessage(message.getSender().getId(), message.getCreatedAt(), message.getContent()))
+            : chats.findByContent_IdAndIdNotOrderByCreatedAtDesc(targetId, messageId, page).stream()
+                .map(message -> new ContextMessage(message.getSender().getId(), message.getCreatedAt(), message.getMessage())))
             .map(message -> new MessageReviewContext.ConversationMessage(message.senderId().equals(userId), message.text())).toList();
         return new MessageReviewContext(currentMessage, recent);
     }

@@ -9,6 +9,7 @@ import com.mopl.realtime.directmessage.repository.DirectMessageRepository;
 import java.util.UUID;
 import com.mopl.core.common.enums.MessageType;
 import com.mopl.realtime.moderation.service.MessageModerationService;
+import com.mopl.realtime.moderation.dto.RuleAction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,16 +50,20 @@ public class DirectMessageService {
 			);
 		}
 
-		String moderatedContent = moderation.inspect(senderId, MessageType.DM, conversationId, content);
+		var decision = moderation.inspect(senderId, MessageType.DM, conversationId, content);
 
 		DirectMessage directMessage = new DirectMessage(
 			conversation,
 			sender,
 			receiver,
-			moderatedContent
+			decision.content()
 		);
 
 		DirectMessage saved = directMessageRepository.save(directMessage);
+
+		if (decision.action() != RuleAction.MASK) {
+			moderation.reviewAfterCommit(senderId, MessageType.DM, conversationId, saved.getId(), content);
+		}
 
 		return DirectMessageResponse.from(saved);
 	}

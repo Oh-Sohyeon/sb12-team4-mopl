@@ -5,7 +5,7 @@ import com.mopl.core.common.enums.MessageType;
 import com.mopl.core.common.enums.ModerationAction;
 import com.mopl.core.common.enums.ModerationCategory;
 import com.mopl.realtime.moderation.config.ModerationProperties;
-import com.mopl.realtime.moderation.dto.MessageReviewOutcome;
+import com.mopl.realtime.moderation.dto.RuleDecision;
 import com.mopl.realtime.moderation.dto.RuleAction;
 import com.mopl.realtime.moderation.exception.ModerationException;
 import com.mopl.realtime.moderation.repository.ChatRestrictionStore;
@@ -38,7 +38,7 @@ public class MessageModerationService {
         }
     }
 
-    public String inspect(UUID userId, MessageType type, UUID targetId, String text) {
+    public RuleDecision inspect(UUID userId, MessageType type, UUID targetId, String text) {
         Timer.Sample sample = Timer.start(meters);
         String outcome = "error";
         try {
@@ -46,35 +46,24 @@ public class MessageModerationService {
             meters.counter("moderation.rule.decisions", "action", decision.action().name().toLowerCase(Locale.ROOT)).increment();
             if (decision.action() == RuleAction.ALLOW) {
                 outcome = "allowed";
-                return decision.content();
+                return decision;
             }
             if (decision.action() == RuleAction.MASK) {
                 violation(userId, type, targetId, text, DetectionSource.RULE,
                     ModerationCategory.PROFANITY, ModerationAction.MASK);
                 outcome = "masked";
-                return decision.content();
+                return decision;
             }
-            var result = messageReviews.review(userId, type, targetId, text);
-            if (result.outcome().failOpen()) {
-                outcome = "fail_open";
-                return text;
-            }
-            if (result.outcome() == MessageReviewOutcome.ALLOW) {
-                outcome = "allowed";
-                return text;
-            }
-            ModerationAction action = result.outcome() == MessageReviewOutcome.MASK ? ModerationAction.MASK : ModerationAction.BLOCK;
-            violation(userId, type, targetId, text, DetectionSource.LLM, ModerationCategory.HARMFUL, action);
-            if (action == ModerationAction.MASK) {
-                outcome = "masked";
-                return result.content();
-            }
-            outcome = "blocked";
-            throw new ModerationException(ModerationException.ErrorCode.MESSAGE_BLOCKED);
+            outcome = "review_forwarded";
+            return decision;
         } finally {
             meters.counter("moderation.messages", "outcome", outcome).increment();
             sample.stop(meters.timer("moderation.message", "outcome", outcome));
         }
+    }
+
+    public void reviewAfterCommit(UUID userId, MessageType type, UUID targetId, UUID messageId, String original) {
+        messageReviews.reviewAfterCommit(userId, type, targetId, messageId, original);
     }
 
     private void violation(UUID userId, MessageType type, UUID targetId, String original,

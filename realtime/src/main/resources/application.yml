@@ -33,6 +33,7 @@ management:
   metrics:
     distribution:
       percentiles-histogram:
+        realtime.message.send: true
         moderation.message: true
         moderation.llm: true
         moderation.review: true

@@ -16,4 +16,7 @@ public interface MessageModerationLogRepository extends JpaRepository<MessageMod
     List<MessageModerationLog> findBySender_IdAndDetectionSourceInAndModerationActionInAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
         UUID senderId, Collection<DetectionSource> sources, Collection<ModerationAction> actions,
         LocalDateTime since, Pageable pageable);
+    boolean existsByDirectMessage_IdAndDetectionSourceAndModerationAction(UUID messageId, DetectionSource source, ModerationAction action);
+    boolean existsByContentChatMessage_IdAndDetectionSourceAndModerationAction(UUID messageId, DetectionSource source, ModerationAction action);
 }
+

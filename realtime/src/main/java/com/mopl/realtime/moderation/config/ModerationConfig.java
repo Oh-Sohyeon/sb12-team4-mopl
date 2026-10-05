@@ -3,6 +3,7 @@ package com.mopl.realtime.moderation.config;
 import com.mopl.infrastructure.ai.config.AiProperties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,6 +30,15 @@ public class ModerationConfig {
         return new ThreadPoolExecutor(properties.workers(), properties.workers(), 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(properties.queueCapacity()), Thread.ofPlatform().name("moderation-message-", 0).factory(),
             new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    @Bean(destroyMethod = "shutdownNow")
+    public ScheduledThreadPoolExecutor moderationMessageScheduler() {
+        var scheduler = new ScheduledThreadPoolExecutor(1,
+            Thread.ofPlatform().name("moderation-message-deadline-", 0).factory());
+        scheduler.setRemoveOnCancelPolicy(true);
+        scheduler.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        return scheduler;
     }
 
     private ExecutorService executor(ModerationProperties properties, String name) {

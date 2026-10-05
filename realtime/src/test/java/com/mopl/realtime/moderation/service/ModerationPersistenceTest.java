@@ -105,14 +105,144 @@ class ModerationPersistenceTest {
             for(int i=0;i<15;i++) entityManager.persist(new DirectMessage(conversation,user,user,"과거 메시지"));
         });
         logs.record(userId,MessageType.DM,conversationId,"증거 전용",DetectionSource.LLM,ModerationCategory.HARMFUL,ModerationAction.BLOCK);
-        var context=contexts.loadMessage(userId,MessageType.DM,conversationId,"현재");
+        var context=contexts.loadMessage(userId,MessageType.DM,conversationId,UUID.randomUUID(),"현재");
         assertThat(context.currentMessage()).isEqualTo("현재");
         assertThat(context.recentConversation()).hasSize(10);
         assertThat(context.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
             .doesNotContain("증거 전용");
-        var chat=contexts.loadMessage(userId,MessageType.CONTENT_CHAT,contentId,"현재");
+        var chat=contexts.loadMessage(userId,MessageType.CONTENT_CHAT,contentId,UUID.randomUUID(),"현재");
         assertThat(chat.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
             .containsExactly("최근 채팅");
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(MessageType.class)
+    void reviewedViolationLinksMessageCountsAndAppearsInSanctionEvidenceOnce(MessageType type) throws Exception {
+        UUID messageId = saveMessage(type, "꺼져");
+        var workers = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try {
+            var first = workers.submit(() -> { start.await(); return logs.recordReviewedViolation(messageId,type,"꺼져"); });
+            var second = workers.submit(() -> { start.await(); return logs.recordReviewedViolation(messageId,type,"꺼져"); });
+            start.countDown();
+            assertThat(java.util.List.of(first.get(5,java.util.concurrent.TimeUnit.SECONDS),second.get(5,java.util.concurrent.TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(true,false);
+        } finally { workers.shutdownNow(); }
+        assertThat(logs.recentCount(userId)).isEqualTo(1);
+        assertThat(contexts.load(userId,type,type==MessageType.DM ? conversationId : contentId,"현재").violations())
+            .extracting(ModerationContextService.ContextMessage::text).containsExactly("꺼져");
+        tx.executeWithoutResult(status -> {
+            var record = repository.findBySender_IdAndDetectionSourceInAndModerationActionInAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(
+                userId, java.util.List.of(DetectionSource.LLM), java.util.List.of(ModerationAction.VIOLATION),
+                LocalDateTime.now().minusMinutes(10), org.springframework.data.domain.PageRequest.of(0,10)).getFirst();
+            assertThat(record.getModerationAction()).isEqualTo(ModerationAction.VIOLATION);
+            assertThat(type==MessageType.DM ? record.getDirectMessage().getId() : record.getContentChatMessage().getId()).isEqualTo(messageId);
+        });
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(MessageType.class)
+    void currentIdIsExcludedBeforeLimitAndIdenticalOtherMessageRemains(MessageType type) {
+        for (int i=0;i<12;i++) saveMessage(type, "과거"+i);
+        UUID other = saveMessage(type, "같은 문자열");
+        UUID current = saveMessage(type, "같은 문자열");
+        tx.executeWithoutResult(status -> {
+            // 현재 메시지가 가장 최신임을 명시해 limit 이후 제거 구현의 회귀를 검출한다.
+            entityManager.createNativeQuery("update " + (type==MessageType.DM ? "direct_messages" : "content_chat_messages")
+                + " set created_at = :time where id = :id")
+                .setParameter("time",LocalDateTime.now().plusMinutes(1)).setParameter("id",current.toString()).executeUpdate();
+        });
+        var context = contexts.loadMessage(userId,type,type==MessageType.DM ? conversationId : contentId,current,"같은 문자열");
+        assertThat(context.recentConversation()).hasSize(10);
+        assertThat(context.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
+            .containsOnlyOnce("같은 문자열");
+        assertThat(other).isNotEqualTo(current);
+    }
+    @Test void maskBlockAndViolationRemainCompatibleInSharedThreshold() {
+        logs.record(userId,MessageType.DM,conversationId,"씨발",DetectionSource.RULE,ModerationCategory.PROFANITY,ModerationAction.MASK);
+        logs.record(userId,MessageType.CONTENT_CHAT,contentId,"legacy",DetectionSource.LLM,ModerationCategory.HARMFUL,ModerationAction.BLOCK);
+        logs.recordReviewedViolation(saveMessage(MessageType.DM,"꺼져"),MessageType.DM,"꺼져");
+        assertThat(logs.recentCount(userId)).isEqualTo(3);
+        assertThat(contexts.load(userId,MessageType.DM,conversationId,"현재").violations()).hasSize(3);
+    }
+    private UUID saveMessage(MessageType type, String text) {
+        return tx.execute(status -> {
+            User user=entityManager.getReference(User.class,userId);
+            if (type==MessageType.DM) {
+                var message=new DirectMessage(entityManager.getReference(Conversation.class,conversationId),user,user,text);
+                entityManager.persist(message); return message.getId();
+            }
+            var message=new ContentChatMessage(entityManager.getReference(Content.class,contentId),user,text);
+            entityManager.persist(message); return message.getId();
+        });
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"DM,ALLOW", "DM,VIOLATION", "CONTENT_CHAT,ALLOW", "CONTENT_CHAT,VIOLATION"})
+    void committedAllowedMessageRemainsOriginalAfterReviewAndRollbackDoesNotReview(MessageType type,
+        com.mopl.realtime.moderation.dto.MessageReviewDecision.Action action) throws Exception {
+        var worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        var meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var observed = new java.util.concurrent.atomic.AtomicReference<com.mopl.realtime.moderation.dto.MessageReviewContext>();
+        var sanctions = org.mockito.Mockito.mock(com.mopl.realtime.moderation.review.ModerationReviewDispatcher.class);
+        var service = new com.mopl.realtime.moderation.review.MessageReviewService(contexts, context -> {
+            observed.set(context); started.countDown();
+            try { release.await(); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+            return new com.mopl.realtime.moderation.dto.MessageReviewDecision(
+                action);
+        },logs,sanctions,ModerationTestSettings.defaults(),
+            com.mopl.realtime.moderation.support.MessageReviewTestSettings.defaults(),meters,worker,scheduler);
+        assertThat(new com.mopl.realtime.moderation.rule.ProfanityRule(ModerationTestSettings.defaults(),
+            com.mopl.realtime.moderation.support.MessageReviewTestSettings.defaults()).inspect("가정교육 수준 보인다").action())
+            .isEqualTo(com.mopl.realtime.moderation.dto.RuleAction.ALLOW);
+        if (action==com.mopl.realtime.moderation.dto.MessageReviewDecision.Action.VIOLATION) {
+            logs.record(userId,MessageType.DM,conversationId,"씨발",DetectionSource.RULE,ModerationCategory.PROFANITY,ModerationAction.MASK);
+            logs.record(userId,MessageType.CONTENT_CHAT,contentId,"병신",DetectionSource.RULE,ModerationCategory.PROFANITY,ModerationAction.MASK);
+        }
+        UUID committed;
+        try {
+            UUID target = type==MessageType.DM ? conversationId : contentId;
+            tx.executeWithoutResult(status -> {
+                UUID rolledBack = saveMessage(type,"가정교육 수준 보인다");
+                service.reviewAfterCommit(userId,type,target,rolledBack,"가정교육 수준 보인다");
+                assertThat(started.getCount()).isEqualTo(1);
+                status.setRollbackOnly();
+            });
+            worker.submit(() -> { }).get(3,java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(started.getCount()).isEqualTo(1);
+            committed = tx.execute(status -> {
+                UUID id = saveMessage(type,"가정교육 수준 보인다");
+                service.reviewAfterCommit(userId,type,target,id,"가정교육 수준 보인다");
+                assertThat(started.getCount()).isEqualTo(1);
+                return id;
+            });
+            assertThat(started.await(3,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(observed.get().currentMessage()).isEqualTo("가정교육 수준 보인다");
+            assertThat(release.getCount()).isEqualTo(1);
+            tx.executeWithoutResult(status -> {
+                if (type==MessageType.DM) assertThat(entityManager.find(DirectMessage.class,committed).getContent()).isEqualTo("가정교육 수준 보인다");
+                else assertThat(entityManager.find(ContentChatMessage.class,committed).getMessage()).isEqualTo("가정교육 수준 보인다");
+            });
+            assertThat(observed.get().recentConversation())
+                .extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text).doesNotContain("가정교육 수준 보인다");
+        } finally {
+            release.countDown(); worker.shutdown(); scheduler.shutdownNow();
+            assertThat(worker.awaitTermination(3,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            meters.close();
+        }
+        tx.executeWithoutResult(status -> {
+            if (type==MessageType.DM) assertThat(entityManager.find(DirectMessage.class,committed).getContent()).isEqualTo("가정교육 수준 보인다");
+            else assertThat(entityManager.find(ContentChatMessage.class,committed).getMessage()).isEqualTo("가정교육 수준 보인다");
+        });
+        if (action==com.mopl.realtime.moderation.dto.MessageReviewDecision.Action.ALLOW) {
+            assertThat(logs.recentCount(userId)).isZero();
+            org.mockito.Mockito.verifyNoInteractions(sanctions);
+        } else {
+            assertThat(logs.recentCount(userId)).isEqualTo(3);
+            org.mockito.Mockito.verify(sanctions).submit(userId,type,type==MessageType.DM ? conversationId : contentId,"가정교육 수준 보인다");
+            assertThat(contexts.load(userId,type,type==MessageType.DM ? conversationId : contentId,"현재").violations())
+                .extracting(ModerationContextService.ContextMessage::text).contains("가정교육 수준 보인다");
+        }
     }
     @Test void oldViolationDoesNotCount() {
         logs.record(userId, MessageType.DM, conversationId, "씨발", DetectionSource.RULE, ModerationCategory.PROFANITY, ModerationAction.MASK);

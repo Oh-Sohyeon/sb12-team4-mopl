@@ -10,7 +10,7 @@ public record MessageReviewProperties(
     @DefaultValue("5s") Duration timeout,
     @DefaultValue("2") int workers,
     @DefaultValue("20") int queueCapacity,
-    @DefaultValue({"꺼져", "죽어", "멍청이"}) List<String> reviewExpressions
+    @DefaultValue({"꺼져", "죽어"}) List<String> reviewExpressions
 ) {
     public MessageReviewProperties {
         if (timeout == null || timeout.isZero() || timeout.isNegative() || workers < 1 || queueCapacity < 1

@@ -14,6 +14,8 @@ import com.mopl.realtime.directmessage.repository.DirectMessageRepository;
 import com.mopl.realtime.moderation.service.MessageModerationService;
 import com.mopl.realtime.moderation.exception.ModerationException;
 import com.mopl.core.common.enums.MessageType;
+import com.mopl.realtime.moderation.dto.RuleAction;
+import com.mopl.realtime.moderation.dto.RuleDecision;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,7 +98,7 @@ class DirectMessageServiceTest {
 			when(conversationRepository.findWithParticipantsById(conversationId))
 				.thenReturn(Optional.of(conversation));
 			when(moderation.inspect(any(), eq(MessageType.DM), eq(conversationId), anyString()))
-                .thenAnswer(invocation -> invocation.getArgument(3, String.class));
+                .thenAnswer(invocation -> new RuleDecision(RuleAction.ALLOW, invocation.getArgument(3, String.class)));
 			when(directMessageRepository.save(any(DirectMessage.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -132,7 +134,7 @@ class DirectMessageServiceTest {
 			when(conversationRepository.findWithParticipantsById(conversationId))
 				.thenReturn(Optional.of(conversation));
 			when(moderation.inspect(any(), eq(MessageType.DM), eq(conversationId), anyString()))
-                .thenAnswer(invocation -> invocation.getArgument(3, String.class));
+                .thenAnswer(invocation -> new RuleDecision(RuleAction.ALLOW, invocation.getArgument(3, String.class)));
 			when(directMessageRepository.save(any(DirectMessage.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 

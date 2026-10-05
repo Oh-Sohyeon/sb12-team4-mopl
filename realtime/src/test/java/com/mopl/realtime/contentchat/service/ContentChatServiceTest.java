@@ -15,6 +15,8 @@ import com.mopl.realtime.contentchat.repository.UserRepository;
 import com.mopl.realtime.moderation.service.MessageModerationService;
 import com.mopl.realtime.moderation.exception.ModerationException;
 import com.mopl.core.common.enums.MessageType;
+import com.mopl.realtime.moderation.dto.RuleAction;
+import com.mopl.realtime.moderation.dto.RuleDecision;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,7 +91,7 @@ class ContentChatServiceTest {
 				.thenReturn(Optional.of(content));
 			when(userRepository.findByIdAndDeletedAtIsNull(senderId))
 				.thenReturn(Optional.of(sender));
-			when(moderation.inspect(senderId, MessageType.CONTENT_CHAT, contentId, "hello")).thenReturn("hello");
+			when(moderation.inspect(senderId, MessageType.CONTENT_CHAT, contentId, "hello")).thenReturn(new RuleDecision(RuleAction.ALLOW, "hello"));
 			when(contentChatMessageRepository.save(any(ContentChatMessage.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 

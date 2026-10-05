@@ -17,6 +17,9 @@ class ModerationConfigTest {
                 assertThat(context).hasSingleBean(MessageReviewProperties.class);
                 assertThat(context.getBean(MessageReviewProperties.class).timeout()).isEqualTo(Duration.ofSeconds(5));
                 assertThat(context).hasBean("moderationMessageExecutor");
+                assertThat(context).hasBean("moderationMessageScheduler");
+                assertThat(context.getBean("moderationMessageScheduler", java.util.concurrent.ScheduledThreadPoolExecutor.class)
+                    .getRemoveOnCancelPolicy()).isTrue();
                 assertThat(context).doesNotHaveBean("moderationChatClient");
                 assertThat(context.getBean(ModerationProperties.class).violationThreshold()).isEqualTo(3);
                 assertThat(context.getBean(ModerationProperties.class).reviewTimeout()).isEqualTo(Duration.ofSeconds(5));

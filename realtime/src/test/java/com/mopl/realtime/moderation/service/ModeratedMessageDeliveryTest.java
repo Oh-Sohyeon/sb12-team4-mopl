@@ -23,13 +23,23 @@ import com.mopl.realtime.moderation.rule.ProfanityRule;
 import com.mopl.realtime.moderation.support.*;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.security.Principal;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.stream.Stream;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.mockito.ArgumentCaptor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 class ModeratedMessageDeliveryTest {
     private final UUID userId=UUID.randomUUID();
     private final UUID targetId=UUID.randomUUID();
@@ -59,11 +69,14 @@ class ModeratedMessageDeliveryTest {
         when(conversations.findWithParticipantsById(targetId)).thenReturn(Optional.of(conversation));
         when(chats.save(any(ContentChatMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(messages.save(any(DirectMessage.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        configureControllers(messageReview, new SimpleMeterRegistry());
+    }
+    private void configureControllers(MessageReviewService reviews, SimpleMeterRegistry meters) {
         var settings=ModerationTestSettings.defaults();
         var moderation=new MessageModerationService(restrictions,new ProfanityRule(settings,MessageReviewTestSettings.defaults()),
-            messageReview,logs,sanctions,settings,new SimpleMeterRegistry());
-        chatController=new ContentChatWebSocketController(new ContentChatService(contents,users,chats,moderation),broadcasts);
-        dmController=new DirectMessageWebSocketController(new DirectMessageService(conversations,messages,moderation),broadcasts);
+            reviews,logs,sanctions,settings,meters);
+        chatController=new ContentChatWebSocketController(new ContentChatService(contents,users,chats,moderation),broadcasts,meters);
+        dmController=new DirectMessageWebSocketController(new DirectMessageService(conversations,messages,moderation),broadcasts,meters);
     }
     @ParameterizedTest @EnumSource(MessageType.class)
     void ruleMasksBeforePersistenceAndBroadcastWhileEvidenceRetainsOriginal(MessageType type) {
@@ -73,24 +86,156 @@ class ModeratedMessageDeliveryTest {
         verifyNoInteractions(messageReview);
     }
     @ParameterizedTest @EnumSource(MessageType.class)
-    void llmMaskPersistsAndBroadcastsValidatedContent(MessageType type) {
-        when(messageReview.review(userId,type,targetId,"너는 멍청이!"))
-            .thenReturn(new MessageReviewResult(MessageReviewOutcome.MASK,"너는 *!"));
-        send(type,"너는 멍청이!");assertDelivery(type,"너는 *!");
-        verify(logs).record(userId,type,targetId,"너는 멍청이!",DetectionSource.LLM,ModerationCategory.HARMFUL,ModerationAction.MASK);
+    void reviewPersistsAndBroadcastsOriginalAndOnlySchedulesAfterSave(MessageType type) {
+        send(type,"꺼져");
+        assertDelivery(type,"꺼져");
+        var order = inOrder(type == MessageType.DM ? messages : chats, messageReview, broadcasts);
+        if (type == MessageType.DM) order.verify(messages).save(any(DirectMessage.class));
+        else order.verify(chats).save(any(ContentChatMessage.class));
+        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq("꺼져"));
+        order.verify(broadcasts).convertAndSend(anyString(),any(Object.class));
+        verifyNoInteractions(logs,sanctions);
+    }
+    static Stream<Arguments> allowedMessages() {
+        return Stream.of(MessageType.values()).flatMap(type -> Stream.of(
+            "가정교육 수준 보인다", "너는 어떻게 자랐길래 그러냐", "부모 얼굴이 궁금하다")
+            .map(text -> Arguments.of(type, text)));
+    }
+    @ParameterizedTest @MethodSource("allowedMessages")
+    void allowPersistsAndBroadcastsOriginalAndSchedulesAfterSave(MessageType type, String text) {
+        assertThat(new ProfanityRule(ModerationTestSettings.defaults(), MessageReviewTestSettings.defaults())
+            .inspect(text).action()).isEqualTo(RuleAction.ALLOW);
+        send(type,text);
+        assertDelivery(type,text);
+        var order = inOrder(type == MessageType.DM ? messages : chats, messageReview, broadcasts);
+        if (type == MessageType.DM) order.verify(messages).save(any(DirectMessage.class));
+        else order.verify(chats).save(any(ContentChatMessage.class));
+        order.verify(messageReview).reviewAfterCommit(eq(userId),eq(type),eq(targetId),any(),eq(text));
+        order.verify(broadcasts).convertAndSend(anyString(),any(Object.class));
+        verifyNoInteractions(logs,sanctions);
+    }
+    static Stream<Arguments> unmaskedReviewResults() {
+        return Stream.of(MessageType.values()).flatMap(type -> Stream.of("가정교육 수준 보인다", "꺼져")
+            .flatMap(text -> Stream.of(MessageReviewDecision.Action.values()).map(action -> Arguments.of(type,text,action))));
+    }
+    @ParameterizedTest @MethodSource("unmaskedReviewResults")
+    void unmaskedMessageIsReviewedAfterCommitWithoutWaitingAndViolationReachesThreshold(
+        MessageType type, String text, MessageReviewDecision.Action action) throws Exception {
+        var contexts=mock(ModerationContextService.class);
+        var worker=Executors.newSingleThreadExecutor();
+        var scheduler=Executors.newSingleThreadScheduledExecutor();
+        var meters=new SimpleMeterRegistry();
+        var started=new CountDownLatch(1);
+        var release=new CountDownLatch(1);
+        var context=new MessageReviewContext(text,List.of(new MessageReviewContext.ConversationMessage(false,"왜 그렇게 말해?")));
+        when(contexts.loadMessage(eq(userId),eq(type),eq(targetId),any(),eq(text))).thenReturn(context);
+        when(logs.recordReviewedViolation(any(),eq(type),eq(text))).thenReturn(true);
+        when(logs.recentCount(userId)).thenReturn(3L);
+        var reviews=new MessageReviewService(contexts, request -> {
+            assertThat(request).isEqualTo(context);
+            started.countDown();
+            try { release.await(); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+            return new MessageReviewDecision(action);
+        },logs,sanctions,ModerationTestSettings.defaults(),MessageReviewTestSettings.defaults(),meters,worker,scheduler);
+        configureControllers(reviews,meters);
+        try {
+            transaction().executeWithoutResult(status -> {
+                send(type,text);
+                assertDelivery(type,text);
+                verifyNoInteractions(contexts,logs,sanctions);
+            });
+            assertThat(started.await(3,TimeUnit.SECONDS)).isTrue();
+            assertThat(release.getCount()).isEqualTo(1);
+            verifyNoInteractions(logs,sanctions);
+            assertThat(meters.get("realtime.message.send").tags("channel",type==MessageType.DM ? "dm" : "chat",
+                "outcome","success").timer().count()).isEqualTo(1);
+            release.countDown();
+            worker.submit(() -> {}).get(3,TimeUnit.SECONDS);
+            assertThat(meters.get("moderation.message.llm").timer().count()).isEqualTo(1);
+            String outcome=action.name().toLowerCase(java.util.Locale.ROOT);
+            assertThat(meters.get("moderation.message.reviews").tag("outcome",outcome).counter().count()).isEqualTo(1);
+            assertThat(meters.get("moderation.message.review").tag("outcome",outcome).timer().count()).isEqualTo(1);
+            if (action==MessageReviewDecision.Action.ALLOW) verifyNoInteractions(logs,sanctions);
+            else {
+                verify(logs).recordReviewedViolation(any(),eq(type),eq(text));
+                verify(sanctions).submit(userId,type,targetId,text);
+            }
+            verifyNoMoreInteractions(broadcasts);
+        } finally {
+            release.countDown(); worker.shutdownNow(); scheduler.shutdownNow();
+            assertThat(worker.awaitTermination(3,TimeUnit.SECONDS)).isTrue();
+            assertThat(scheduler.awaitTermination(3,TimeUnit.SECONDS)).isTrue();
+            meters.close();
+        }
     }
     @ParameterizedTest @EnumSource(MessageType.class)
-    void failOpenPersistsAndBroadcastsOriginalWithoutViolation(MessageType type) {
-        when(messageReview.review(userId,type,targetId,"꺼져"))
-            .thenReturn(new MessageReviewResult(MessageReviewOutcome.FAIL_OPEN_TIMEOUT,"꺼져"));
-        send(type,"꺼져");assertDelivery(type,"꺼져");verifyNoInteractions(logs,sanctions);
+    void allowedMessageRollbackNeverSubmitsReview(MessageType type) {
+        var contexts=mock(ModerationContextService.class);
+        var reviewer=mock(MessageReviewer.class);
+        var worker=mock(ExecutorService.class);
+        var scheduler=mock(ScheduledExecutorService.class);
+        var meters=new SimpleMeterRegistry();
+        try {
+            configureControllers(new MessageReviewService(contexts,reviewer,logs,sanctions,
+                ModerationTestSettings.defaults(),MessageReviewTestSettings.defaults(),meters,worker,scheduler),meters);
+            transaction().executeWithoutResult(status -> {
+                send(type,"부모 얼굴이 궁금하다");
+                status.setRollbackOnly();
+            });
+            verifyNoInteractions(worker,scheduler,contexts,reviewer,logs,sanctions);
+        } finally { meters.close(); }
     }
-    @ParameterizedTest @EnumSource(MessageType.class)
-    void llmBlockDoesNotPersistOrBroadcast(MessageType type) {
-        when(messageReview.review(userId,type,targetId,"꺼져"))
-            .thenReturn(new MessageReviewResult(MessageReviewOutcome.BLOCK,"꺼져"));
-        assertThatThrownBy(() -> send(type,"꺼져")).isInstanceOf(ModerationException.class);
-        verify(chats,never()).save(any());verify(messages,never()).save(any());verifyNoInteractions(broadcasts);
+    static Stream<Arguments> reviewFailures() {
+        return Stream.of(MessageType.values()).flatMap(type -> Stream.of("timeout","error","invalid_response","queue_full")
+            .map(outcome -> Arguments.of(type,outcome)));
+    }
+    @ParameterizedTest @MethodSource("reviewFailures")
+    void allowedMessageReviewFailureLeavesOriginalDeliveryAndNoViolation(MessageType type, String outcome) throws Exception {
+        String text="부모 얼굴이 궁금하다";
+        var contexts=mock(ModerationContextService.class);
+        var worker=Executors.newSingleThreadExecutor();
+        var scheduler=Executors.newSingleThreadScheduledExecutor();
+        var meters=new SimpleMeterRegistry();
+        var rejected=mock(ExecutorService.class);
+        doThrow(new RejectedExecutionException()).when(rejected).execute(any(Runnable.class));
+        when(contexts.loadMessage(eq(userId),eq(type),eq(targetId),any(),eq(text)))
+            .thenReturn(new MessageReviewContext(text,List.of()));
+        var reviewer=mock(MessageReviewer.class);
+        when(reviewer.review(any())).thenAnswer(invocation -> {
+            if (outcome.equals("timeout")) throw new IllegalStateException(new java.net.SocketTimeoutException());
+            if (outcome.equals("invalid_response")) throw new com.mopl.realtime.moderation.exception.InvalidMessageReviewResponseException();
+            throw new IllegalStateException("model error");
+        });
+        configureControllers(new MessageReviewService(contexts,reviewer,logs,sanctions,ModerationTestSettings.defaults(),
+            MessageReviewTestSettings.defaults(),meters,outcome.equals("queue_full") ? rejected : worker,scheduler),meters);
+        try {
+            transaction().executeWithoutResult(status -> {
+                send(type,text);
+                assertDelivery(type,text);
+                verifyNoInteractions(contexts,reviewer,logs,sanctions);
+            });
+            worker.submit(() -> {}).get(3,TimeUnit.SECONDS);
+            assertThat(meters.get("moderation.message.reviews").tag("outcome",outcome).counter().count()).isEqualTo(1);
+            assertThat(meters.find("moderation.message.reviews").tag("outcome","violation").counter()).isNull();
+            verifyNoInteractions(logs,sanctions);
+            verifyNoMoreInteractions(broadcasts);
+            assertThat(meters.get("realtime.message.send").tags("channel",type==MessageType.DM ? "dm" : "chat",
+                "outcome","success").timer().count()).isEqualTo(1);
+            if (outcome.equals("queue_full")) verifyNoInteractions(contexts,reviewer);
+        } finally {
+            worker.shutdownNow(); scheduler.shutdownNow();
+            assertThat(worker.awaitTermination(3,TimeUnit.SECONDS)).isTrue();
+            assertThat(scheduler.awaitTermination(3,TimeUnit.SECONDS)).isTrue();
+            meters.close();
+        }
+    }
+    private TransactionTemplate transaction() {
+        return new TransactionTemplate(new AbstractPlatformTransactionManager() {
+            @Override protected Object doGetTransaction() { return new Object(); }
+            @Override protected void doBegin(Object transaction, TransactionDefinition definition) { }
+            @Override protected void doCommit(DefaultTransactionStatus status) { }
+            @Override protected void doRollback(DefaultTransactionStatus status) { }
+        });
     }
     @ParameterizedTest @EnumSource(MessageType.class)
     void restrictionStillBlocksBeforeContextAndPersistence(MessageType type) {
