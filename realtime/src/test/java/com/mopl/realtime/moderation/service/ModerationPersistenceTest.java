@@ -99,18 +99,28 @@ class ModerationPersistenceTest {
             ModerationCategory.HARMFUL,ModerationAction.ALLOW)).isInstanceOf(IllegalArgumentException.class);
     }
     @Test void messageContextIsBoundedAndDoesNotIncludeEvidence() {
+        var oldMessages = new java.util.ArrayList<UUID>();
         tx.executeWithoutResult(status -> {
             User user=entityManager.getReference(User.class,userId);
             Conversation conversation=entityManager.getReference(Conversation.class,conversationId);
-            for(int i=0;i<15;i++) entityManager.persist(new DirectMessage(conversation,user,user,"과거 메시지"));
+            for(int i=0;i<15;i++) {
+                var message = new DirectMessage(conversation,user,user,"과거 메시지");
+                entityManager.persist(message);
+                oldMessages.add(message.getId());
+            }
         });
+        for (int i=0;i<oldMessages.size();i++) setCreatedAt(MessageType.DM,oldMessages.get(i),LocalDateTime.of(2020,1,1,0,0).plusSeconds(i));
         logs.record(userId,MessageType.DM,conversationId,"증거 전용",DetectionSource.LLM,ModerationCategory.HARMFUL,ModerationAction.BLOCK);
-        var context=contexts.loadMessage(userId,MessageType.DM,conversationId,UUID.randomUUID(),"현재");
+        UUID currentDm=saveMessage(MessageType.DM,"현재");
+        setCreatedAt(MessageType.DM,currentDm,LocalDateTime.of(2030,1,1,0,0));
+        var context=contexts.loadMessage(userId,MessageType.DM,conversationId,currentDm,"현재");
         assertThat(context.currentMessage()).isEqualTo("현재");
         assertThat(context.recentConversation()).hasSize(10);
         assertThat(context.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
             .doesNotContain("증거 전용");
-        var chat=contexts.loadMessage(userId,MessageType.CONTENT_CHAT,contentId,UUID.randomUUID(),"현재");
+        UUID currentChat=saveMessage(MessageType.CONTENT_CHAT,"현재");
+        setCreatedAt(MessageType.CONTENT_CHAT,currentChat,LocalDateTime.of(2030,1,1,0,0));
+        var chat=contexts.loadMessage(userId,MessageType.CONTENT_CHAT,contentId,currentChat,"현재");
         assertThat(chat.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
             .containsExactly("최근 채팅");
     }
@@ -141,20 +151,42 @@ class ModerationPersistenceTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(MessageType.class)
     void currentIdIsExcludedBeforeLimitAndIdenticalOtherMessageRemains(MessageType type) {
-        for (int i=0;i<12;i++) saveMessage(type, "과거"+i);
-        UUID other = saveMessage(type, "같은 문자열");
-        UUID current = saveMessage(type, "같은 문자열");
-        tx.executeWithoutResult(status -> {
-            // 현재 메시지가 가장 최신임을 명시해 limit 이후 제거 구현의 회귀를 검출한다.
-            entityManager.createNativeQuery("update " + (type==MessageType.DM ? "direct_messages" : "content_chat_messages")
-                + " set created_at = :time where id = :id")
-                .setParameter("time",LocalDateTime.now().plusMinutes(1)).setParameter("id",current.toString()).executeUpdate();
-        });
+        var older = new java.util.ArrayList<UUID>();
+        for (int i=0;i<12;i++) older.add(saveMessage(type, "과거"+i));
+        UUID tieA = saveMessage(type, "같은 문자열");
+        UUID tieB = saveMessage(type, "같은 문자열");
+        UUID current = tieA.toString().compareTo(tieB.toString()) > 0 ? tieA : tieB;
+        UUID other = current.equals(tieA) ? tieB : tieA;
+        var currentTime = LocalDateTime.of(2021,1,1,0,0);
+        for (int i=0;i<older.size();i++) setCreatedAt(type,older.get(i),currentTime.minusMinutes(1).plusSeconds(i));
+        setCreatedAt(type,tieA,currentTime);
+        setCreatedAt(type,tieB,currentTime);
         var context = contexts.loadMessage(userId,type,type==MessageType.DM ? conversationId : contentId,current,"같은 문자열");
         assertThat(context.recentConversation()).hasSize(10);
         assertThat(context.recentConversation()).extracting(com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
             .containsOnlyOnce("같은 문자열");
         assertThat(other).isNotEqualTo(current);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(MessageType.class)
+    void messageContextIncludesOnlyMessagesBeforeCurrentByTimeAndId(MessageType type) {
+        UUID older = saveMessage(type,"시간상 이전");
+        UUID tiedA = saveMessage(type,"동일 시각 후보 A");
+        UUID tiedB = saveMessage(type,"동일 시각 후보 B");
+        UUID current = tiedA.toString().compareTo(tiedB.toString()) > 0 ? tiedA : tiedB;
+        UUID tiedEarlier = current.equals(tiedA) ? tiedB : tiedA;
+        UUID future = saveMessage(type,"시간상 이후");
+        var currentTime = LocalDateTime.of(2021,2,3,4,5);
+        setCreatedAt(type,older,currentTime.minusSeconds(1));
+        setCreatedAt(type,tiedA,currentTime);
+        setCreatedAt(type,tiedB,currentTime);
+        setCreatedAt(type,future,currentTime.plusSeconds(1));
+
+        var context = contexts.loadMessage(userId,type,type==MessageType.DM ? conversationId : contentId,current,"현재 판정 대상");
+        assertThat(context.currentMessage()).isEqualTo("현재 판정 대상");
+        assertThat(context.recentConversation()).extracting(
+            com.mopl.realtime.moderation.dto.MessageReviewContext.ConversationMessage::text)
+            .containsExactly(entityText(type,tiedEarlier),"시간상 이전");
     }
     @Test void maskBlockAndViolationRemainCompatibleInSharedThreshold() {
         logs.record(userId,MessageType.DM,conversationId,"씨발",DetectionSource.RULE,ModerationCategory.PROFANITY,ModerationAction.MASK);
@@ -173,6 +205,17 @@ class ModerationPersistenceTest {
             var message=new ContentChatMessage(entityManager.getReference(Content.class,contentId),user,text);
             entityManager.persist(message); return message.getId();
         });
+    }
+    private void setCreatedAt(MessageType type, UUID id, LocalDateTime createdAt) {
+        tx.executeWithoutResult(status -> entityManager.createNativeQuery("update "
+            + (type==MessageType.DM ? "direct_messages" : "content_chat_messages")
+            + " set created_at = :time where id = :id")
+            .setParameter("time",createdAt).setParameter("id",id.toString()).executeUpdate());
+    }
+    private String entityText(MessageType type, UUID id) {
+        return tx.execute(status -> type==MessageType.DM
+            ? entityManager.find(DirectMessage.class,id).getContent()
+            : entityManager.find(ContentChatMessage.class,id).getMessage());
     }
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"DM,ALLOW", "DM,VIOLATION", "CONTENT_CHAT,ALLOW", "CONTENT_CHAT,VIOLATION"})

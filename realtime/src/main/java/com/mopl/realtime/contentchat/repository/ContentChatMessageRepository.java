@@ -9,5 +9,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ContentChatMessageRepository
 	extends JpaRepository<ContentChatMessage, UUID> {
     List<ContentChatMessage> findByContent_IdOrderByCreatedAtDesc(UUID contentId, Pageable pageable);
-    List<ContentChatMessage> findByContent_IdAndIdNotOrderByCreatedAtDesc(UUID contentId, UUID messageId, Pageable pageable);
+    List<ContentChatMessage> findByContent_IdAndCreatedAtLessThanEqualOrderByCreatedAtDescIdDesc(
+        UUID contentId, java.time.LocalDateTime createdAt, Pageable pageable);
 }

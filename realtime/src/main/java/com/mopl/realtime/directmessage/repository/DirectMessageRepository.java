@@ -8,5 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface DirectMessageRepository extends JpaRepository<DirectMessage, UUID> {
     List<DirectMessage> findByConversation_IdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
-    List<DirectMessage> findByConversation_IdAndIdNotOrderByCreatedAtDesc(UUID conversationId, UUID messageId, Pageable pageable);
+    List<DirectMessage> findByConversation_IdAndCreatedAtLessThanEqualOrderByCreatedAtDescIdDesc(
+        UUID conversationId, java.time.LocalDateTime createdAt, Pageable pageable);
 }
